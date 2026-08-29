@@ -1,59 +1,71 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
-import * as vscode from 'vscode';
-import { PythonExtension } from '@vscode/python-extension';
+import * as vscode from "vscode";
+import { JmpService } from "./services/jmpService";
+import { ConfigWatcher } from "./services/configWatcher";
+import { StatusBarManager } from "./services/statusBar";
+import { Poller, PollerOptions } from "./services/poller";
+import { Services } from "./services";
 
-const { execa } = require('execa');
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  const output = vscode.window.createOutputChannel("Jumpstarter");
+  context.subscriptions.push(output);
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
-export async function activate(context: vscode.ExtensionContext): Promise<any> {
+  const jmp = new JmpService(output);
+  const configWatcher = new ConfigWatcher();
+  const statusBar = new StatusBarManager(jmp);
+  context.subscriptions.push(jmp, configWatcher, statusBar);
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "jumpstarter" is now active!');
+  const services: Services = {
+    jmp,
+    configWatcher,
+    statusBar,
+    output,
+    createPoller: (options: PollerOptions) => new Poller(options),
+  };
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('jumpstarter.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from vscode-jumpstarter!');
-	});
+  // Base wiring: keep the status bar in sync with config changes, interpreter
+  // switches and availability probes.
+  context.subscriptions.push(
+    configWatcher.onDidChangeConfig(() => void statusBar.refresh()),
+    jmp.onDidChangeAvailability(() => void statusBar.refresh()),
+    vscode.commands.registerCommand("jumpstarter.refresh", async () => {
+      await jmp.probe();
+      await statusBar.refresh();
+    }),
+  );
 
-	const python = await getPythonExtension();
-	if (python) {
-		await checkJumpstarterVersion(python);
-		const pythonEnvironment = python.environments.onDidChangeActiveEnvironmentPath((event) => {
-			console.log("Python environment changed", event);
-			checkJumpstarterVersion(python);
-		});
-		context.subscriptions.push(pythonEnvironment);
-	}
+  // Resolve the Python interpreter, hook environment-change events and run
+  // the initial `jmp version` probe (fires onDidChangeAvailability).
+  await jmp.initialize();
 
-	context.subscriptions.push(disposable);
+  // -------------------------------------------------------------------------
+  // Feature registration points.
+  //
+  // Each feature module lives in src/features/<name>.ts and exports
+  //   export function register<Feature>(context, services): void
+  // Import it at the top of this file and call it here.
+  // -------------------------------------------------------------------------
+
+  // FEATURE REGISTRATION: clients (tree view jumpstarter.clients)
+  // import { registerClients } from "./features/clients";
+  // registerClients(context, services);
+
+  // FEATURE REGISTRATION: exporters (tree view jumpstarter.exporters)
+  // import { registerExporters } from "./features/exporters";
+  // registerExporters(context, services);
+
+  // FEATURE REGISTRATION: leases (tree view jumpstarter.leases)
+  // import { registerLeases } from "./features/leases";
+  // registerLeases(context, services);
+
+  // FEATURE REGISTRATION: shell / lease terminals
+  // import { registerShell } from "./features/shell";
+  // registerShell(context, services);
+
+  // FEATURE REGISTRATION: auth / login flows
+  // import { registerAuth } from "./features/auth";
+  // registerAuth(context, services);
+
+  void services; // referenced by the feature registrations above
 }
 
-async function checkJumpstarterVersion(python: PythonExtension): Promise<boolean> {
-	const path = python.environments.getActiveEnvironmentPath().path;
-	console.log("Found Python extension! Active environment path:", path);
-	const { stdout } = await execa`${path} -m jumpstarter_cli version --output json`;
-	console.log("Command Output: ", stdout);
-	return true;
-}
-
-/**
- * Return the python extension's API, if available.
- */
-async function getPythonExtension(): Promise<PythonExtension | undefined> {
-	try {
-		return await PythonExtension.api();
-	} catch (err) {
-		console.error(`Unable to load python extension: ${err}`);
-		return undefined;
-	}
-}
-
-// This method is called when your extension is deactivated
-export function deactivate() { }
+export function deactivate(): void {}

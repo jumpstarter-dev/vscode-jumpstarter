@@ -22,12 +22,58 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "jumpstarter",
+          "title": "Jumpstarter",
+          "icon": "$(zap)"
+        }
+      ]
+    },
+    "views": {
+      "jumpstarter": [
+        {
+          "id": "jumpstarter.clients",
+          "name": "Clients",
+          "icon": "$(zap)"
+        },
+        {
+          "id": "jumpstarter.exporters",
+          "name": "Exporters",
+          "icon": "$(zap)"
+        },
+        {
+          "id": "jumpstarter.leases",
+          "name": "Leases",
+          "icon": "$(zap)"
+        }
+      ]
+    },
     "commands": [
       {
-        "command": "jumpstarter.helloWorld",
-        "title": "Hello World"
+        "command": "jumpstarter.refresh",
+        "title": "Refresh",
+        "category": "Jumpstarter",
+        "icon": "$(refresh)"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Jumpstarter",
+      "properties": {
+        "jumpstarter.jmpPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to a `jmp` executable. When set, it is invoked directly instead of resolving `jumpstarter_cli` from the active Python environment."
+        },
+        "jumpstarter.pollIntervalSeconds": {
+          "type": "number",
+          "default": 15,
+          "minimum": 5,
+          "description": "How often (in seconds) the Jumpstarter views poll the controller for exporters and leases."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "pnpm run package",
@@ -41,7 +87,8 @@
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "test:unit": "pnpm run compile-tests && node --test \"out/test/unit/**/*.test.js\""
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -56,16 +103,8 @@
     "npm-run-all": "^4.1.5",
     "typescript": "^5.7.3"
   },
-  "pnpm": {
-    "ignoredBuiltDependencies": [
-      "esbuild"
-    ],
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
-  },
   "dependencies": {
-    "@vscode/python-extension": "^1.0.5",
-    "execa": "^9.5.2"
-  }
+    "@vscode/python-extension": "^1.0.5"
+  },
+  "packageManager": "pnpm@11.24.0"
 }
