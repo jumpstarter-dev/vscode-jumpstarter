@@ -91,15 +91,15 @@ test("withDriverCompletions: a branch carries that driver's config keys", () => 
   const out = withDriverCompletions(EXPORTER_SCHEMA, [makeDriver()]);
   const variant = variantFor(out, "jumpstarter_driver_network.driver.TcpNetwork");
   assert.deepEqual(Object.keys(variant.properties.config.properties), ["host", "port"]);
+  assert.deepEqual(variant.properties.config.required, ["host", "port"]);
 });
 
-test("configSchemaFor: required keys are documented, not declared", () => {
-  // A schema with unmet required keys makes the YAML server offer a
-  // fill-in-the-object snippet that crowds out the key completions.
+test("configSchemaFor: required keys are declared and documented", () => {
   const schema = configSchemaFor(makeDriver());
-  assert.equal("required" in schema, false);
+  // Declared, so a config missing a mandatory key is reported...
+  assert.deepEqual(schema.required, ["host", "port"]);
+  // ...and marked, so the requirement is visible while typing.
   const properties = schema.properties as Record<string, Record<string, unknown>>;
-  assert.match(String(properties.host.markdownDescription), /Required/);
   assert.equal(properties.port.markdownDescription, "**Required.**");
 });
 
@@ -201,6 +201,7 @@ test("namespaceRefs: rewrites nested refs and leaves other strings alone", () =>
 test("configSchemaFor: stays open to keys we could not describe", () => {
   const schema = configSchemaFor(makeDriver({ required: [] }));
   assert.equal(schema.additionalProperties, true);
+  assert.equal("required" in schema, false);
   const properties = schema.properties as Record<string, Record<string, unknown>>;
   assert.equal(properties.host.markdownDescription, undefined);
 });

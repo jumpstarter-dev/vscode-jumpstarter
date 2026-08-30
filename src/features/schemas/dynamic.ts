@@ -90,10 +90,11 @@ export function namespacedDefs(driver: DriverSchema): Record<string, JsonSchema>
  * recovered from its dataclass may be described incompletely, and rejecting
  * unknown keys there would flag valid configs.
  *
- * `required` is deliberately not emitted. The YAML language server answers a
- * schema with unmet required keys by adding a "fill in the whole object"
- * snippet to the completion list, which crowds out the keys themselves; the
- * requirement is carried in each key's documentation instead.
+ * `required` is declared so a config missing a mandatory key is reported. The
+ * YAML language server responds to unmet required keys by also offering a
+ * "fill in the whole object" snippet in the completion list — accepted as the
+ * price of the diagnostic. Each such key is marked in its documentation too,
+ * so the requirement is visible while typing.
  */
 export function configSchemaFor(driver: DriverSchema): JsonSchema {
   const prefix = defsPrefixFor(driver);
@@ -111,6 +112,7 @@ export function configSchemaFor(driver: DriverSchema): JsonSchema {
   return {
     type: "object",
     properties,
+    ...(required.size > 0 ? { required: [...required] } : {}),
     additionalProperties: true,
   };
 }
