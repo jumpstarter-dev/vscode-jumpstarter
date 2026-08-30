@@ -25,6 +25,8 @@ import {
   ExporterConfigRef,
   DriverInfo,
   DriverListResponse,
+  DriverSchema,
+  DriverSchemaResponse,
   Exporter,
   GetExportersResponse,
   GetLeasesResponse,
@@ -427,6 +429,19 @@ export class JmpService implements vscode.Disposable {
   /** `jmp driver list -o json` — locally installed driver packages. */
   async driverList(): Promise<DriverInfo[]> {
     const res = await this.runJson<DriverListResponse>(protocol.buildDriverListArgs());
+    return res.drivers ?? [];
+  }
+
+  /**
+   * `jmp driver schema -o json` — per-driver config keys as JSON Schema.
+   *
+   * Loading every driver class is comparatively slow (seconds on a large
+   * environment), so callers should cache the result per interpreter.
+   */
+  async driverSchemas(): Promise<DriverSchema[]> {
+    const res = await this.runJson<DriverSchemaResponse>(protocol.buildDriverSchemaArgs(), {
+      timeoutMs: 120_000,
+    });
     return res.drivers ?? [];
   }
 

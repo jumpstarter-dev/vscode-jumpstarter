@@ -25,7 +25,15 @@ export function registerSchemas(context: vscode.ExtensionContext, services: Serv
     activateYamlAssociation({
       configHome: services.configWatcher.configHome,
       schemaPath: (fileName) => context.asAbsolutePath(path.join("schemas", fileName)),
-      output: services.output,
+      loadDrivers: async () => {
+        const availability = services.jmp.getAvailability();
+        if (availability?.kind === "ok" && !availability.capabilities.driverSchema) {
+          return [];
+        }
+        return services.jmp.driverSchemas();
+      },
+      onDidChangeEnvironment: services.jmp.onDidChangeAvailability,
+      log: (message) => services.jmp.log(message),
     }),
   );
 

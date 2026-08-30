@@ -23,14 +23,23 @@ export function schemaFileName(kind: SchemaKind): string {
   return `${kind}.schema.json`;
 }
 
-/** URI announced to the YAML extension for a schema kind. */
-export function schemaUriForKind(kind: SchemaKind): string {
-  return `${SCHEMA_URI_SCHEME}:///${schemaFileName(kind)}`;
+/**
+ * URI announced to the YAML extension for a schema kind.
+ *
+ * The YAML server caches schema content per URI, so a `version` is appended
+ * when the generated content depends on the environment: switching
+ * interpreters yields a new URI, which is a cache miss, so the content is
+ * fetched again instead of serving another venv's drivers.
+ */
+export function schemaUriForKind(kind: SchemaKind, version?: string): string {
+  const base = `${SCHEMA_URI_SCHEME}:///${schemaFileName(kind)}`;
+  return version ? `${base}?v=${encodeURIComponent(version)}` : base;
 }
 
 /** Reverse of schemaUriForKind: extract the kind from a schema URI. */
 export function schemaKindForUri(uri: string): SchemaKind | undefined {
-  const match = /^jumpstarter-schema:\/{0,3}([a-z-]+)\.schema\.json$/.exec(uri);
+  const withoutQuery = uri.split("?")[0];
+  const match = /^jumpstarter-schema:\/{0,3}([a-z-]+)\.schema\.json$/.exec(withoutQuery);
   if (match === null) {
     return undefined;
   }

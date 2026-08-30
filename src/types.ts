@@ -88,6 +88,23 @@ export interface ClientConfigList {
   items: ClientConfigItem[];
 }
 
+/** One driver's config keys as JSON Schema, from `jmp driver schema`. */
+export interface DriverSchema {
+  name: string;
+  type: string;
+  package?: string | null;
+  version?: string | null;
+  description?: string | null;
+  properties: Record<string, unknown>;
+  required: string[];
+  /** Set when the driver could not be loaded or modelled; keys may still be present. */
+  error?: string | null;
+}
+
+export interface DriverSchemaResponse {
+  drivers: DriverSchema[];
+}
+
 /**
  * One locally configured exporter, reduced to what the extension may hold.
  *

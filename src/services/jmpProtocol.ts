@@ -289,6 +289,10 @@ export function buildListClientsArgs(): string[] {
   return ["config", "client", "list", "-o", "json"];
 }
 
+export function buildDriverSchemaArgs(): string[] {
+  return ["driver", "schema", "-o", "json"];
+}
+
 export function buildListExporterConfigsArgs(): string[] {
   return ["config", "exporter", "list", "-o", "json"];
 }
@@ -349,6 +353,8 @@ export interface JmpCapabilities {
   authStatus: boolean;
   /** `jmp driver list -o json` exists. */
   driverList: boolean;
+  /** `jmp driver schema -o json` exists (per-driver config keys). */
+  driverSchema: boolean;
   /** `jmp describe lease --devices -o json` exists. */
   describeDevices: boolean;
   /** `--with leases,online,status` on `jmp get exporters` exists. */
@@ -398,6 +404,7 @@ export function computeCapabilities(gitVersion: string): JmpCapabilities {
   return {
     authStatus: full,
     driverList: full,
+    driverSchema: full,
     describeDevices: full,
     exporterStatusColumns: full,
     leaseStatus: full,
