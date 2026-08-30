@@ -432,6 +432,9 @@ export function registerExporters(context: vscode.ExtensionContext, services: Se
   provider.poller = poller;
   context.subscriptions.push(poller);
   context.subscriptions.push(
+    // Ending a lease frees or recycles an exporter, so this view is stale
+    // until it re-reads — do not make the user wait out the poll interval.
+    services.onDidChangeLeases(() => void poller.refreshNow()),
     treeView.onDidChangeVisibility((e) => poller.setVisible(e.visible)),
   );
   poller.setVisible(treeView.visible);
@@ -490,30 +493,32 @@ export function registerExporters(context: vscode.ExtensionContext, services: Se
 
   const createLease = async (
     client: string,
-    opts: { exporterName?: string; selector?: string },
+    opts: { exporterName?: string; selector?: string; label?: string },
     duration: string,
   ): Promise<void> => {
-    const target = opts.exporterName ?? `selector '${opts.selector}'`;
+    const target = opts.label ?? opts.exporterName ?? `selector '${opts.selector}'`;
     try {
+      // Progress shows in the Leases view: that is where the result appears,
+      // and acquiring can take a while when a pool has to provision first.
       const leaseName = await vscode.window.withProgress(
         {
-          location: vscode.ProgressLocation.Notification,
-          title: `Jumpstarter: acquiring lease on ${target}…`,
+          location: { viewId: "jumpstarter.leases" },
+          title: `Acquiring lease on ${target}…`,
         },
-        () => services.jmp.createLease(client, { ...opts, duration }),
+        () =>
+          services.jmp.createLease(client, {
+            exporterName: opts.exporterName,
+            selector: opts.selector,
+            duration,
+          }),
       );
       void vscode.window.showInformationMessage(
         `Jumpstarter: lease '${leaseName}' created on ${target}.`,
       );
+      // Leasing changes both views: this exporter is now held, and a pool may
+      // have recycled or provisioned behind it.
+      services.notifyLeasesChanged();
       void poller.refreshNow();
-      // Nudge the (sibling-owned) Leases view when present — best effort.
-      const commands = new Set(await vscode.commands.getCommands(true));
-      if (commands.has("jumpstarter.leases.refresh")) {
-        void vscode.commands.executeCommand("jumpstarter.leases.refresh");
-      }
-      if (commands.has("jumpstarter.leases.focus")) {
-        void vscode.commands.executeCommand("jumpstarter.leases.focus");
-      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       void vscode.window.showErrorMessage(`Jumpstarter: failed to create lease: ${message}`);
@@ -549,22 +554,11 @@ export function registerExporters(context: vscode.ExtensionContext, services: Se
         if (!duration) {
           return;
         }
-        try {
-          const name = await services.jmp.createLease(client, {
-            selector: exporterSetSelector(group.name),
-            duration,
-          });
-          void vscode.window.showInformationMessage(
-            `Jumpstarter: leased ${name} from ${group.name}.`,
-          );
-          void poller.refreshNow();
-        } catch (err) {
-          void vscode.window.showErrorMessage(
-            `Jumpstarter: failed to lease from ${group.name}: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          );
-        }
+        await createLease(
+          client,
+          { selector: exporterSetSelector(group.name), label: `pool ${group.name}` },
+          duration,
+        );
       },
     ),
 

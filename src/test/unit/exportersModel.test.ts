@@ -378,14 +378,25 @@ test("exporterSetDescription: counts members and calls out leased and offline", 
     }),
   ]);
   const description = exporterSetDescription(sets[0]);
-  assert.match(description, /3 exporters/);
+  // Available over total leads: it decides whether leasing is instant.
+  assert.match(description, /^1\/3 available/);
   assert.match(description, /1 leased/);
   assert.match(description, /1 offline/);
 });
 
-test("exporterSetDescription: a single member reads in the singular", () => {
+test("exporterSetDescription: an empty pool reads as none available", () => {
   const { sets } = groupExporterSets([pooled("qemu-pool-a")]);
-  assert.match(exporterSetDescription(sets[0]), /^1 exporter · /);
+  assert.match(exporterSetDescription(sets[0]), /^1\/1 available/);
+
+  const offlineOnly = groupExporterSets([
+    makeExporter({
+      name: "qemu-pool-z",
+      status: "OFFLINE",
+      online: false,
+      labels: { "exporterset.jumpstarter.dev/name": "qemu-pool" },
+    }),
+  ]);
+  assert.match(exporterSetDescription(offlineOnly.sets[0]), /^0\/1 available/);
 });
 
 test("exporterSetTooltip: says how to lease from the pool", () => {

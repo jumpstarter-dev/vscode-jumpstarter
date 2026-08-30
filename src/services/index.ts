@@ -29,6 +29,16 @@ export interface Services {
   /** Shared "Jumpstarter" output channel for logs/warnings. */
   output: vscode.OutputChannel;
   /**
+   * Fires after a lease is created, extended or ended.
+   *
+   * Leasing changes what the Exporters view shows as much as the Leases view
+   * — an exporter becomes leased, or is recycled out of a pool — so both
+   * refresh on this rather than waiting out their own poll interval.
+   */
+  onDidChangeLeases: vscode.Event<void>;
+  /** Announce a lease change; see onDidChangeLeases. */
+  notifyLeasesChanged(): void;
+  /**
    * Create a Poller owned by the calling feature. The feature must push the
    * returned poller onto context.subscriptions (it is a Disposable) and call
    * start() / setVisible() itself.

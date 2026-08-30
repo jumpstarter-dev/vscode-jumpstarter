@@ -27,6 +27,10 @@ import {
 /** Local countdown re-render cadence (no jmp calls involved). */
 const COUNTDOWN_TICK_MS = 10_000;
 
+/** How long to keep the progress bar up waiting for a lease change to land. */
+const SETTLE_TIMEOUT_MS = 30_000;
+const SETTLE_POLL_MS = 1_000;
+
 export function registerLeases(context: vscode.ExtensionContext, services: Services): void {
   const { jmp } = services;
   const provider = new LeasesTreeProvider(jmp);
@@ -109,6 +113,8 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
   context.subscriptions.push(
     services.configWatcher.onDidChangeConfig(restart),
     jmp.onDidChangeAvailability(() => restart()),
+    // A lease acquired from the Exporters view belongs here immediately.
+    services.onDidChangeLeases(() => void poller.refreshNow()),
   );
 
   // Live remaining-time countdown between polls; pure re-render.
@@ -206,6 +212,55 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
       }
       showJmpError("Failed to check authentication", err);
       return false;
+    }
+  };
+
+  /**
+   * Run a lease mutation with the Leases view showing progress until the
+   * change is actually visible, not merely requested: the CLI returns as soon
+   * as the controller accepts the lease, while binding, provisioning and
+   * recycling all happen afterwards.
+   */
+  const withLeaseProgress = async <T>(
+    title: string,
+    work: () => Promise<T>,
+    settled?: (leases: readonly import("../types").Lease[]) => boolean,
+  ): Promise<T | undefined> => {
+    return vscode.window.withProgress(
+      { location: { viewId: "jumpstarter.leases" }, title },
+      async () => {
+        let result: T;
+        try {
+          result = await work();
+        } catch (err) {
+          showJmpError(title, err);
+          return undefined;
+        }
+        services.notifyLeasesChanged();
+        if (settled && lastClient) {
+          await waitFor(lastClient, settled);
+        }
+        void poller.refreshNow();
+        return result;
+      },
+    );
+  };
+
+  /** Poll until the predicate holds, or give up so the bar never hangs. */
+  const waitFor = async (
+    client: string,
+    settled: (leases: readonly import("../types").Lease[]) => boolean,
+  ): Promise<void> => {
+    const deadline = Date.now() + SETTLE_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      try {
+        if (settled(await jmp.getLeases(client, true))) {
+          return;
+        }
+      } catch {
+        return; // The view's own error handling reports it on the next tick.
+      }
+      await new Promise((resolve) => setTimeout(resolve, SETTLE_POLL_MS));
     }
   };
 
@@ -393,12 +448,9 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
       if (!(await checkAuth(leaseNode.client))) {
         return;
       }
-      try {
-        await jmp.updateLease(leaseNode.client, leaseNode.lease.name, duration);
-        void poller.refreshNow();
-      } catch (err) {
-        showJmpError("Failed to update lease", err);
-      }
+      await withLeaseProgress(`Extending lease ${model.shortLeaseName(leaseNode.lease.name)}…`, () =>
+        jmp.updateLease(leaseNode.client, leaseNode.lease.name, duration),
+      );
     }),
 
     vscode.commands.registerCommand("jumpstarter.leases.end", async (node: unknown) => {

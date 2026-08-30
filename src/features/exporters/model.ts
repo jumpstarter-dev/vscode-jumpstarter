@@ -362,21 +362,25 @@ export function exporterSetSelector(name: string): string {
   return `${EXPORTER_SET_NAME_LABEL}=${name}`;
 }
 
-/** "3 exporters · 1 leased · qemu-class" for a pool row. */
+/**
+ * "1/3 available · 1 leased · qemu.jumpstarter.dev" for a pool row.
+ *
+ * Available over total is what decides whether leasing from the pool is
+ * instant, so it leads.
+ */
 export function exporterSetDescription(group: ExporterSetGroup): string {
   const parts: string[] = [];
-  const total = group.exporters.length;
-  parts.push(total === 1 ? "1 exporter" : `${total} exporters`);
+  const categories = group.exporters.map((exporter) =>
+    categorizeExporter(exporter.status, exporter.online),
+  );
+  const available = categories.filter((category) => category === "available").length;
+  parts.push(`${available}/${group.exporters.length} available`);
 
-  const leased = group.exporters.filter(
-    (exporter) => categorizeExporter(exporter.status, exporter.online) === "leased",
-  ).length;
+  const leased = categories.filter((category) => category === "leased").length;
   if (leased > 0) {
     parts.push(`${leased} leased`);
   }
-  const offline = group.exporters.filter(
-    (exporter) => categorizeExporter(exporter.status, exporter.online) === "offline",
-  ).length;
+  const offline = categories.filter((category) => category === "offline").length;
   if (offline > 0) {
     parts.push(`${offline} offline`);
   }

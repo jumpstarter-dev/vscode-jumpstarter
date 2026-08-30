@@ -20,11 +20,16 @@ export function activate(context: vscode.ExtensionContext): void {
   const statusBar = new StatusBarManager(jmp);
   context.subscriptions.push(jmp, configWatcher, statusBar);
 
+  const leaseChangeEmitter = new vscode.EventEmitter<void>();
+  context.subscriptions.push(leaseChangeEmitter);
+
   const services: Services = {
     jmp,
     configWatcher,
     statusBar,
     output,
+    onDidChangeLeases: leaseChangeEmitter.event,
+    notifyLeasesChanged: () => leaseChangeEmitter.fire(),
     createPoller: (options: PollerOptions) => new Poller(options),
   };
 
