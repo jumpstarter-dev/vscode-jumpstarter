@@ -42,6 +42,46 @@ export function driverDocumentation(driver: DriverSchema): string {
   return lines.join("\n\n");
 }
 
+/** A definition name unique to one driver, so two drivers cannot collide. */
+export function defsPrefixFor(driver: DriverSchema): string {
+  return `${driver.type.replace(/[^A-Za-z0-9]+/g, "_")}__`;
+}
+
+/**
+ * Rewrite every "#/$defs/X" reference in a fragment to "#/$defs/<prefix>X".
+ *
+ * Driver schemas reference their own definitions; those definitions are merged
+ * into the host schema under prefixed names, so the references have to move
+ * with them or they dangle.
+ */
+export function namespaceRefs(node: unknown, prefix: string): unknown {
+  if (Array.isArray(node)) {
+    return node.map((item) => namespaceRefs(item, prefix));
+  }
+  if (node === null || typeof node !== "object") {
+    return node;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    if (key === "$ref" && typeof value === "string" && value.startsWith("#/$defs/")) {
+      out[key] = `#/$defs/${prefix}${value.slice("#/$defs/".length)}`;
+    } else {
+      out[key] = namespaceRefs(value, prefix);
+    }
+  }
+  return out;
+}
+
+/** One driver's definitions, renamed and re-pointed under its own prefix. */
+export function namespacedDefs(driver: DriverSchema): Record<string, JsonSchema> {
+  const prefix = defsPrefixFor(driver);
+  const out: Record<string, JsonSchema> = {};
+  for (const [name, definition] of Object.entries(driver.defs ?? {})) {
+    out[`${prefix}${name}`] = namespaceRefs(definition, prefix) as JsonSchema;
+  }
+  return out;
+}
+
 /**
  * The `config:` sub-schema for one driver.
  *
@@ -50,9 +90,10 @@ export function driverDocumentation(driver: DriverSchema): string {
  * unknown keys there would flag valid configs.
  */
 export function configSchemaFor(driver: DriverSchema): JsonSchema {
+  const prefix = defsPrefixFor(driver);
   return {
     type: "object",
-    properties: clone(driver.properties ?? {}),
+    properties: namespaceRefs(clone(driver.properties ?? {}), prefix) as JsonSchema,
     ...(driver.required && driver.required.length > 0 ? { required: [...driver.required] } : {}),
     additionalProperties: true,
   };
@@ -93,12 +134,19 @@ export function withDriverCompletions(baseSchema: JsonSchema, drivers: DriverSch
     ],
   };
 
-  instance.allOf = sorted
-    .filter((driver) => Object.keys(driver.properties ?? {}).length > 0)
-    .map((driver) => ({
-      if: { properties: { type: { const: driver.type } }, required: ["type"] },
-      then: { properties: { config: configSchemaFor(driver) } },
-    }));
+  const withConfig = sorted.filter(
+    (driver) => Object.keys(driver.properties ?? {}).length > 0,
+  );
+  instance.allOf = withConfig.map((driver) => ({
+    if: { properties: { type: { const: driver.type } }, required: ["type"] },
+    then: { properties: { config: configSchemaFor(driver) } },
+  }));
+
+  // Definitions the driver configs reference travel with them, prefixed per
+  // driver so identically named models from two drivers cannot collide.
+  for (const driver of withConfig) {
+    Object.assign(defs, namespacedDefs(driver));
+  }
 
   return schema;
 }

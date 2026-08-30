@@ -2,7 +2,7 @@
   "name": "vscode-jumpstarter",
   "displayName": "Jumpstarter",
   "description": "Jumpstarter Hardware Testing support.",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "jumpstarter",
   "author": "Jumpstarter",
   "contributors": [

@@ -11,6 +11,7 @@ import {
   driverAllowPatterns,
   driverDocumentation,
   withDriverAllowCompletions,
+  namespaceRefs,
   withDriverCompletions,
 } from "../../features/schemas/dynamic";
 import { DriverSchema } from "../../types";
@@ -100,6 +101,58 @@ test("withDriverCompletions: does not mutate the input schema", () => {
   const before = JSON.stringify(EXPORTER_SCHEMA);
   withDriverCompletions(EXPORTER_SCHEMA, [makeDriver()]);
   assert.equal(JSON.stringify(EXPORTER_SCHEMA), before);
+});
+
+test("withDriverCompletions: driver definitions travel with their refs", () => {
+  const driver = makeDriver({
+    name: "Xcp",
+    type: "jumpstarter_driver_xcp.driver.Xcp",
+    properties: { protocol: { $ref: "#/$defs/XcpEthProtocol" } },
+    required: [],
+    defs: { XcpEthProtocol: { enum: ["TCP", "UDP"], title: "XcpEthProtocol" } },
+  });
+  const out = withDriverCompletions(EXPORTER_SCHEMA, [driver]);
+  const defs = out.$defs as Record<string, unknown>;
+  const prefix = "jumpstarter_driver_xcp_driver_Xcp__";
+
+  // Every ref in the generated document must resolve inside it, or the YAML
+  // server reports "$ref ... cannot be resolved" over the whole file.
+  const branch = instanceBase(out).allOf[0];
+  assert.equal(branch.then.properties.config.properties.protocol.$ref, `#/$defs/${prefix}XcpEthProtocol`);
+  assert.ok(defs[`${prefix}XcpEthProtocol`]);
+});
+
+test("withDriverCompletions: same-named defs from two drivers do not collide", () => {
+  const a = makeDriver({
+    type: "pkg_a.driver.A",
+    properties: { mode: { $ref: "#/$defs/Mode" } },
+    required: [],
+    defs: { Mode: { enum: ["a1", "a2"] } },
+  });
+  const b = makeDriver({
+    type: "pkg_b.driver.B",
+    properties: { mode: { $ref: "#/$defs/Mode" } },
+    required: [],
+    defs: { Mode: { enum: ["b1", "b2"] } },
+  });
+  const out = withDriverCompletions(EXPORTER_SCHEMA, [a, b]);
+  const defs = out.$defs as Record<string, any>;
+  assert.deepEqual(defs["pkg_a_driver_A__Mode"].enum, ["a1", "a2"]);
+  assert.deepEqual(defs["pkg_b_driver_B__Mode"].enum, ["b1", "b2"]);
+});
+
+test("namespaceRefs: rewrites nested refs and leaves other strings alone", () => {
+  const input = {
+    items: { $ref: "#/$defs/Thing" },
+    other: { $ref: "https://example.com/x.json" },
+    list: [{ $ref: "#/$defs/Deep" }],
+    title: "#/$defs/NotARef",
+  };
+  const out = namespaceRefs(input, "P__") as Record<string, any>;
+  assert.equal(out.items.$ref, "#/$defs/P__Thing");
+  assert.equal(out.other.$ref, "https://example.com/x.json");
+  assert.equal(out.list[0].$ref, "#/$defs/P__Deep");
+  assert.equal(out.title, "#/$defs/NotARef");
 });
 
 test("configSchemaFor: stays open to keys we could not describe", () => {

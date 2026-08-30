@@ -96,6 +96,8 @@ export interface DriverSchema {
   version?: string | null;
   description?: string | null;
   properties: Record<string, unknown>;
+  /** Definitions the properties reference ("#/$defs/..."). */
+  defs?: Record<string, unknown>;
   required: string[];
   /** Set when the driver could not be loaded or modelled; keys may still be present. */
   error?: string | null;
