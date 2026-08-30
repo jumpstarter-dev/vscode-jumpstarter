@@ -40,13 +40,15 @@ export interface IconSpec {
   colorId: string | undefined;
 }
 
-// All circle-shaped so the column reads as one set of states at a glance:
+// All circle-shaped so the column reads as one set of states at a glance, with
+// outline for a resting state and filled for one that wants attention:
 // outline check = free to lease, filled check = leased and ready to use,
-// circle-x = not usable, question = the controller did not report a status.
+// outline slash = offline (codicons have no outline circle-x), filled x =
+// hook failure, question = the controller did not report a status.
 const CATEGORY_ICONS: Record<ExporterCategory, IconSpec> = {
   available: { id: "pass", colorId: "charts.green" },
   leased: { id: "pass-filled", colorId: "charts.green" },
-  offline: { id: "error", colorId: "disabledForeground" },
+  offline: { id: "circle-slash", colorId: "charts.red" },
   failed: { id: "error", colorId: "charts.red" },
   unknown: { id: "question", colorId: "disabledForeground" },
 };

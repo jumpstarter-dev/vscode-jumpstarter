@@ -87,10 +87,13 @@ test("iconForCategory: colors match the spec", () => {
     id: "pass-filled",
     colorId: "charts.green",
   });
-  assert.equal(iconForCategory("failed").colorId, "charts.red");
-  assert.deepEqual(iconForCategory("offline"), {
+  assert.deepEqual(iconForCategory("failed"), {
     id: "error",
-    colorId: "disabledForeground",
+    colorId: "charts.red",
+  });
+  assert.deepEqual(iconForCategory("offline"), {
+    id: "circle-slash",
+    colorId: "charts.red",
   });
 });
 
