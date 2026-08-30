@@ -40,10 +40,11 @@ export interface IconSpec {
   colorId: string | undefined;
 }
 
+// All circle-shaped so the column reads as one set of states at a glance.
 const CATEGORY_ICONS: Record<ExporterCategory, IconSpec> = {
-  available: { id: "circle-filled", colorId: "charts.green" },
-  leased: { id: "circle-filled", colorId: "charts.yellow" },
-  offline: { id: "circle-slash", colorId: "disabledForeground" },
+  available: { id: "pass", colorId: "charts.green" },
+  leased: { id: "circle-filled", colorId: "charts.blue" },
+  offline: { id: "error", colorId: "disabledForeground" },
   failed: { id: "error", colorId: "charts.red" },
   unknown: { id: "question", colorId: "disabledForeground" },
 };
@@ -206,7 +207,7 @@ export function buildExporterTooltipMarkdown(exporter: Exporter, now: Date = new
   lines.push("");
   lines.push(
     `Status: \`${exporter.status ?? "unknown"}\` (${exporter.online ? "online" : "offline"}` +
-      `${exporter.enabled ? "" : ", disabled"})`,
+      `${exporter.enabled === false ? ", disabled" : ""})`,
   );
   const lease = exporter.lease;
   if (lease) {

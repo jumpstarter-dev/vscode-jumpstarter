@@ -13,6 +13,7 @@
 import * as vscode from "vscode";
 import { JmpError, Services, Poller } from "../services";
 import { Exporter } from "../types";
+import { showDetails } from "./details";
 import {
   buildExporterItemSpec,
   buildSelector,
@@ -357,6 +358,14 @@ export function registerExporters(context: vscode.ExtensionContext, services: Se
     showCollapseAll: false,
   });
   context.subscriptions.push(treeView);
+  context.subscriptions.push(
+    treeView.onDidChangeSelection((e) => {
+      const selected = e.selection[0];
+      if (selected?.kind === "exporter") {
+        showDetails({ kind: "exporter", exporter: selected.exporter });
+      }
+    }),
+  );
 
   const poller = services.createPoller({
     name: "exporters",

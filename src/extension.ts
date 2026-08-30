@@ -4,13 +4,14 @@ import { ConfigWatcher } from "./services/configWatcher";
 import { StatusBarManager } from "./services/statusBar";
 import { Poller, PollerOptions } from "./services/poller";
 import { Services } from "./services";
+import { registerDetails } from "./features/details";
 import { registerClients } from "./features/clients";
 import { registerExporters } from "./features/exporters";
 import { registerLeases } from "./features/leases";
 import { registerTesting } from "./features/testing";
 import { registerSchemas } from "./features/schemas";
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Jumpstarter");
   context.subscriptions.push(output);
 
@@ -38,10 +39,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   );
 
-  // Resolve the Python interpreter, hook environment-change events and run
-  // the initial `jmp version` probe (fires onDidChangeAvailability).
-  await jmp.initialize();
-
   // -------------------------------------------------------------------------
   // Feature registration points.
   //
@@ -49,6 +46,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   //   export function register<Feature>(context, services): void
   // Import it at the top of this file and call it here.
   // -------------------------------------------------------------------------
+
+  // FEATURE REGISTRATION: details (webview jumpstarter.details) — registered
+  // first so the trees can push their initial selection into it
+  registerDetails(context);
 
   // FEATURE REGISTRATION: clients (tree view jumpstarter.clients, auth flows,
   // add-client wizard, status bar quick pick)
@@ -67,6 +68,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // FEATURE REGISTRATION: schemas (YAML schema association + config scaffolds)
   registerSchemas(context, services);
+
+  // Resolve the Python interpreter, hook environment-change events and run
+  // the initial `jmp version` probe (fires onDidChangeAvailability). NOT
+  // awaited: registration above must not wait on a slow/hanging probe —
+  // commands and views must exist immediately, and every feature re-renders
+  // on onDidChangeAvailability once the probe completes.
+  void jmp.initialize();
 }
 
 export function deactivate(): void {}

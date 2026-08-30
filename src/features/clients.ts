@@ -19,6 +19,7 @@
 import * as vscode from "vscode";
 import { JmpAvailability, Services } from "../services";
 import { AuthStatus } from "../types";
+import { showDetails } from "./details";
 import {
   authBadge,
   buildClientCreateArgs,
@@ -190,9 +191,23 @@ export function registerClients(context: vscode.ExtensionContext, services: Serv
     treeDataProvider: provider,
     showCollapseAll: false,
   });
+  context.subscriptions.push(
+    treeView.onDidChangeSelection((e) => {
+      const selected = e.selection[0];
+      if (selected?.kind === "client") {
+        showDetails({ kind: "client", client: selected.row });
+      }
+    }),
+  );
   const poller = services.createPoller({
     name: "clients",
-    tick: () => provider.load(),
+    tick: async () => {
+      await provider.load();
+      // Keep the status bar auth badge live too: a token can expire between
+      // explicit refreshes while VS Code stays open. Coalescing overlapping
+      // calls is handled inside StatusBarManager.refresh().
+      void services.statusBar.refresh();
+    },
   });
   context.subscriptions.push(provider, treeView, poller);
 
@@ -214,18 +229,28 @@ export function registerClients(context: vscode.ExtensionContext, services: Serv
     await Promise.all([poller.refreshNow(), services.statusBar.refresh()]);
   };
 
-  /** Resolve the client a command targets: tree item arg, else QuickPick. */
+  /**
+   * Resolve the client a command targets: tree item arg or a plain alias
+   * string (as passed by other features, e.g. the exporters view's
+   * re-authenticate row), else QuickPick.
+   */
   const resolveClient = async (
-    node: ClientNode | undefined,
+    node: ClientNode | string | undefined,
     placeHolder: string,
   ): Promise<ClientRow | undefined> => {
-    if (node && node.kind === "client") {
+    if (node && typeof node === "object" && node.kind === "client") {
       return node.row;
     }
     let rows = provider.rows;
     if (rows.length === 0) {
       await provider.load();
       rows = provider.rows;
+    }
+    if (typeof node === "string") {
+      const match = rows.find((r) => r.alias === node);
+      if (match) {
+        return match;
+      }
     }
     if (rows.length === 0) {
       void vscode.window.showInformationMessage(
@@ -321,7 +346,7 @@ export function registerClients(context: vscode.ExtensionContext, services: Serv
 
     vscode.commands.registerCommand(
       "jumpstarter.reauthenticateClient",
-      async (node?: ClientNode) => {
+      async (node?: ClientNode | string) => {
         const row = await resolveClient(node, "Re-authenticate a client");
         if (!row) {
           return;

@@ -299,7 +299,7 @@ export class JmpService implements vscode.Disposable {
   /** `jmp get exporters --with leases,online,status -o json --client <client>` */
   async getExporters(client: string): Promise<Exporter[]> {
     const res = await this.runJson<GetExportersResponse>(protocol.buildGetExportersArgs(client));
-    return res.exporters ?? [];
+    return (res.exporters ?? []).map(protocol.normalizeExporter);
   }
 
   /** `jmp get leases -o json --client <client>` (`-a` when includeEnded). */
@@ -425,6 +425,41 @@ export class JmpService implements vscode.Disposable {
     return {
       command: invocation.command,
       args: [...invocation.prefixArgs, ...protocol.buildShellArgs(client, lease, command)],
+    };
+  }
+
+  /**
+   * Build the argv to run a Python file inside a lease session (via
+   * `jmp shell ... -- <interpreter> <file>`), for use in a VS Code terminal.
+   *
+   * The lease session inherits PATH unchanged, so a bare "python" would
+   * resolve to the system interpreter — not the active environment jmp was
+   * invoked from — and the script could not import the jumpstarter client
+   * library or project dependencies. Use the resolved interpreter path:
+   * in python-module mode that is the invocation command itself; with a
+   * jmpPath override, fall back to the active interpreter when known, else
+   * a bare "python".
+   */
+  async getRunFileCommand(
+    client: string,
+    lease: string,
+    filePath: string,
+  ): Promise<{ command: string; args: string[] }> {
+    const invocation = await this.getInvocation();
+    let interpreter: string;
+    if (invocation.prefixArgs.length > 0) {
+      // `<python> -m jumpstarter_cli` mode: the command IS the interpreter.
+      interpreter = invocation.command;
+    } else {
+      const python = await this.pythonPathOrEmpty();
+      interpreter = python || "python";
+    }
+    return {
+      command: invocation.command,
+      args: [
+        ...invocation.prefixArgs,
+        ...protocol.buildShellArgs(client, lease, [interpreter, filePath]),
+      ],
     };
   }
 

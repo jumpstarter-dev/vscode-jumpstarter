@@ -6,6 +6,8 @@
 
 import * as path from "path";
 
+import { Exporter, ExporterStatus } from "../types";
+
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
@@ -187,6 +189,41 @@ export function buildGetExportersArgs(client: string): string[] {
     "--client",
     client,
   ];
+}
+
+/**
+ * ExporterStatus names indexed by their protobuf ordinal.
+ *
+ * CLIs older than the status-name serializer emit the raw enum integer in
+ * JSON rather than the name; map it back so both wire forms categorize alike.
+ */
+const EXPORTER_STATUS_BY_ORDINAL: readonly ExporterStatus[] = [
+  "UNSPECIFIED",
+  "OFFLINE",
+  "AVAILABLE",
+  "BEFORE_LEASE_HOOK",
+  "LEASE_READY",
+  "AFTER_LEASE_HOOK",
+  "BEFORE_LEASE_HOOK_FAILED",
+  "AFTER_LEASE_HOOK_FAILED",
+];
+
+/** Normalize a raw JSON `status` (name, ordinal, null or absent) to a name. */
+export function normalizeExporterStatus(raw: unknown): ExporterStatus | null {
+  if (typeof raw === "number") {
+    return EXPORTER_STATUS_BY_ORDINAL[raw] ?? null;
+  }
+  if (typeof raw === "string") {
+    return EXPORTER_STATUS_BY_ORDINAL.includes(raw as ExporterStatus)
+      ? (raw as ExporterStatus)
+      : null;
+  }
+  return null;
+}
+
+/** Apply wire-format normalization to one exporter from `jmp get exporters`. */
+export function normalizeExporter(exporter: Exporter): Exporter {
+  return { ...exporter, status: normalizeExporterStatus(exporter.status) };
 }
 
 export function buildGetLeasesArgs(client: string, includeEnded = false): string[] {
@@ -386,8 +423,10 @@ export function redactSecretArgs(args: readonly string[]): string[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Directory holding config.yaml and clients/<alias>.yaml:
- * $JMP_CLIENT_CONFIG_HOME, else ~/.config/jumpstarter.
+ * Directory holding config.yaml and clients/<alias>.yaml, matching the CLI's
+ * resolution (jumpstarter/config/common.py): $JMP_CLIENT_CONFIG_HOME, else
+ * $XDG_CONFIG_HOME/jumpstarter when XDG_CONFIG_HOME is set and non-empty,
+ * else ~/.config/jumpstarter.
  */
 export function resolveConfigHome(
   env: Record<string, string | undefined>,
@@ -396,6 +435,10 @@ export function resolveConfigHome(
   const override = env["JMP_CLIENT_CONFIG_HOME"];
   if (override && override.trim().length > 0) {
     return override;
+  }
+  const xdg = env["XDG_CONFIG_HOME"];
+  if (xdg && xdg.trim().length > 0) {
+    return path.join(xdg, "jumpstarter");
   }
   return path.join(homedir, ".config", "jumpstarter");
 }

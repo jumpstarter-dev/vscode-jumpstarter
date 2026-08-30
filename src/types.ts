@@ -48,7 +48,11 @@ export interface Exporter {
   online: boolean;
   /** Null when the controller does not report exporter status (older builds). */
   status: ExporterStatus | null;
-  enabled: boolean;
+  /**
+   * Only present with `--allow-disabled`; absent means the exporter is
+   * enabled, since the CLI omits disabled exporters without that flag.
+   */
+  enabled?: boolean;
   /** The active lease on this exporter, or null when unleased. */
   lease: Lease | null;
 }

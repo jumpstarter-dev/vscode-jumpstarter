@@ -52,6 +52,12 @@
           "id": "jumpstarter.leases",
           "name": "Leases",
           "icon": "$(zap)"
+        },
+        {
+          "id": "jumpstarter.details",
+          "name": "Details",
+          "type": "webview",
+          "icon": "$(zap)"
         }
       ]
     },
@@ -83,7 +89,7 @@
         "command": "jumpstarter.useClient",
         "title": "Set as Current Client",
         "category": "Jumpstarter",
-        "icon": "$(check)"
+        "icon": "$(star-full)"
       },
       {
         "command": "jumpstarter.reauthenticateClient",
@@ -136,7 +142,7 @@
         "command": "jumpstarter.exporters.acquireLease",
         "title": "Acquire Lease",
         "category": "Jumpstarter",
-        "icon": "$(add)"
+        "icon": "$(play)"
       },
       {
         "command": "jumpstarter.leases.refresh",
@@ -185,7 +191,8 @@
       {
         "command": "jumpstarter.leases.runDeviceCommand",
         "title": "Run in Lease Terminal",
-        "category": "Jumpstarter"
+        "category": "Jumpstarter",
+        "icon": "$(play)"
       },
       {
         "command": "jumpstarter.pinLeaseForTests",

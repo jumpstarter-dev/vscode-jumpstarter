@@ -80,12 +80,18 @@ test("categorizeExporter: offline overrides AVAILABLE and UNSPECIFIED", () => {
 
 test("iconForCategory: colors match the spec", () => {
   assert.deepEqual(iconForCategory("available"), {
-    id: "circle-filled",
+    id: "pass",
     colorId: "charts.green",
   });
-  assert.equal(iconForCategory("leased").colorId, "charts.yellow");
+  assert.deepEqual(iconForCategory("leased"), {
+    id: "circle-filled",
+    colorId: "charts.blue",
+  });
   assert.equal(iconForCategory("failed").colorId, "charts.red");
-  assert.equal(iconForCategory("offline").colorId, "disabledForeground");
+  assert.deepEqual(iconForCategory("offline"), {
+    id: "error",
+    colorId: "disabledForeground",
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -211,7 +217,7 @@ test("buildExporterItemSpec: held exporter shows leaseholder", () => {
     makeExporter({ status: "LEASE_READY", lease: makeLease({ client: "alice" }) }),
   );
   assert.equal(spec.contextValue, "exporter-leased");
-  assert.equal(spec.icon.colorId, "charts.yellow");
+  assert.equal(spec.icon.colorId, "charts.blue");
   assert.ok(spec.description.startsWith("leased by alice"));
   assert.ok(spec.description.includes("board=rpi4"));
 });

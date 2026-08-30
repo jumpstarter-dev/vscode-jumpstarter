@@ -14,6 +14,8 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { Services, JmpError } from "../services";
+import { Lease } from "../types";
+import { showDetails } from "./details";
 import * as model from "./leases/model";
 import {
   LeasesTreeProvider,
@@ -34,6 +36,14 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
     showCollapseAll: true,
   });
   context.subscriptions.push(treeView);
+  context.subscriptions.push(
+    treeView.onDidChangeSelection((e) => {
+      const selected = e.selection[0] as { kind?: string; lease?: Lease } | undefined;
+      if (selected?.kind === "lease" && selected.lease) {
+        showDetails({ kind: "lease", lease: selected.lease });
+      }
+    }),
+  );
 
   let includeEnded = false;
   let lastClient: string | null = null;
@@ -128,13 +138,11 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
   };
 
   const openLeaseTerminal = async (
-    client: string,
-    leaseName: string,
     terminalName: string,
-    command?: readonly string[],
+    getShell: () => Promise<{ command: string; args: string[] }>,
   ): Promise<void> => {
     try {
-      const shell = await jmp.getShellCommand(client, leaseName, command);
+      const shell = await getShell();
       const terminal = vscode.window.createTerminal({
         name: terminalName,
         shellPath: shell.command,
@@ -145,6 +153,28 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
       void vscode.window.showErrorMessage(
         `Jumpstarter: ${err instanceof Error ? err.message : String(err)}`,
       );
+    }
+  };
+
+  /**
+   * Guard for user-initiated remote jmp calls (extend/release): an expired
+   * token would otherwise send the no-TTY background process into an
+   * interactive browser re-auth that hangs until the timeout. Returns true
+   * when the call may proceed.
+   */
+  const checkAuth = async (client: string): Promise<boolean> => {
+    try {
+      await jmp.ensureAuthValid(client);
+      return true;
+    } catch (err) {
+      if (err instanceof JmpError && err.kind === "auth-expired") {
+        void vscode.window.showWarningMessage(
+          `Jumpstarter: client '${client}' needs re-authentication first (re-authenticate from the Clients view or run \`jmp login\` in a terminal).`,
+        );
+        return false;
+      }
+      showJmpError("Failed to check authentication", err);
+      return false;
     }
   };
 
@@ -178,10 +208,8 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
       if (!leaseNode) {
         return;
       }
-      await openLeaseTerminal(
-        leaseNode.client,
-        leaseNode.lease.name,
-        `jmp shell ${model.shortLeaseName(leaseNode.lease.name)}`,
+      await openLeaseTerminal(`jmp shell ${model.shortLeaseName(leaseNode.lease.name)}`, () =>
+        jmp.getShellCommand(leaseNode.client, leaseNode.lease.name),
       );
     }),
 
@@ -203,11 +231,8 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
           return;
         }
         const filePath = editor.document.uri.fsPath;
-        await openLeaseTerminal(
-          leaseNode.client,
-          leaseNode.lease.name,
-          `jmp run ${path.basename(filePath)}`,
-          ["python", filePath],
+        await openLeaseTerminal(`jmp run ${path.basename(filePath)}`, () =>
+          jmp.getRunFileCommand(leaseNode.client, leaseNode.lease.name, filePath),
         );
       },
     ),
@@ -241,6 +266,9 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
         }
         duration = input.trim();
       }
+      if (!(await checkAuth(leaseNode.client))) {
+        return;
+      }
       try {
         await jmp.updateLease(leaseNode.client, leaseNode.lease.name, duration);
         void poller.refreshNow();
@@ -262,6 +290,9 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
         "Release",
       );
       if (confirmed !== "Release") {
+        return;
+      }
+      if (!(await checkAuth(leaseNode.client))) {
         return;
       }
       try {
@@ -305,11 +336,8 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
         if (!n || n.kind !== "command" || !n.descriptor) {
           return;
         }
-        await openLeaseTerminal(
-          n.client,
-          n.leaseName,
-          n.descriptor.label,
-          ["j", ...n.descriptor.cliPath],
+        await openLeaseTerminal(n.descriptor.label, () =>
+          jmp.getShellCommand(n.client, n.leaseName, ["j", ...n.descriptor.cliPath]),
         );
       },
     ),
