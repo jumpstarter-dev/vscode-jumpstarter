@@ -13,7 +13,13 @@ import { StatusBarManager } from "./statusBar";
 import { Poller, PollerOptions } from "./poller";
 
 export { JmpService, JmpError, JmpErrorKind, JmpCapabilities } from "./jmpService";
-export type { JmpAvailability, JmpInvocation, RunResult, CreateLeaseOptions } from "./jmpService";
+export type {
+  JmpAvailability,
+  JmpInvocation,
+  RunResult,
+  CreateLeaseOptions,
+  AdminOptions,
+} from "./jmpService";
 export { ConfigWatcher } from "./configWatcher";
 export { StatusBarManager } from "./statusBar";
 export { Poller, configuredPollIntervalSeconds } from "./poller";

@@ -399,6 +399,110 @@ export function buildShellArgs(client: string, lease: string, command?: readonly
 }
 
 // ---------------------------------------------------------------------------
+// Cluster administration (`jmp admin ...`)
+//
+// These talk to the Kubernetes API with the user's kubeconfig rather than to
+// the controller with a client token, so they see every resource in a
+// namespace instead of the ones one client may reach.
+// ---------------------------------------------------------------------------
+
+/** How to reach the cluster; every field falls back to the CLI's own default. */
+export interface AdminOptions {
+  /** Kubernetes namespace. Defaults to the CLI's "default". */
+  namespace?: string;
+  /** Path to a kubeconfig file. Defaults to the usual KUBECONFIG resolution. */
+  kubeconfig?: string;
+  /** Kubeconfig context. Defaults to the current context. */
+  context?: string;
+}
+
+/** Resource kinds `jmp admin get` can list. */
+export type AdminKind = "client" | "exporter" | "lease" | "exporterset";
+
+export function buildAdminOptionArgs(options: AdminOptions = {}): string[] {
+  const args: string[] = [];
+  if (options.namespace) {
+    args.push("-n", options.namespace);
+  }
+  if (options.kubeconfig) {
+    args.push("--kubeconfig", options.kubeconfig);
+  }
+  if (options.context) {
+    args.push("--context", options.context);
+  }
+  return args;
+}
+
+/** `jmp admin get <kind> [name] -o json` */
+export function buildAdminGetArgs(
+  kind: AdminKind,
+  options: AdminOptions = {},
+  name?: string,
+): string[] {
+  const args = ["admin", "get", kind];
+  if (name) {
+    args.push(name);
+  }
+  return [...args, ...buildAdminOptionArgs(options), "-o", "json"];
+}
+
+/** Allowed driver clients for an imported client config. */
+export interface ImportDriverAccess {
+  /** Driver client packages the config may import. */
+  allow?: readonly string[];
+  /** Allow every driver client package (unsafe). */
+  unsafe?: boolean;
+}
+
+/**
+ * `jmp admin import <kind> <name> ... -o path`
+ *
+ * Fetches the credentials the cluster generated for an existing client or
+ * exporter and writes them to a local config, printing only the path it wrote.
+ * Always non-interactive: the CLI would otherwise prompt on a pipe and hang.
+ */
+export function buildAdminImportArgs(
+  kind: "client" | "exporter",
+  name: string,
+  options: AdminOptions = {},
+  access: ImportDriverAccess & { out?: string } = {},
+): string[] {
+  const args = ["admin", "import", kind, name, ...buildAdminOptionArgs(options)];
+  if (kind === "client") {
+    if (access.unsafe) {
+      args.push("--unsafe");
+    } else if (access.allow && access.allow.length > 0) {
+      args.push("-a", access.allow.join(","));
+    }
+  }
+  if (access.out) {
+    args.push("--out", access.out);
+  }
+  args.push("--nointeractive", "-o", "path");
+  return args;
+}
+
+/** `jmp admin apply -f <file> ... -o json` */
+export function buildAdminApplyArgs(
+  files: readonly string[],
+  options: AdminOptions = {},
+  opts: { dryRun?: boolean } = {},
+): string[] {
+  if (files.length === 0) {
+    throw new JmpError("usage", "apply requires at least one manifest file");
+  }
+  const args = ["admin", "apply"];
+  for (const file of files) {
+    args.push("-f", file);
+  }
+  args.push(...buildAdminOptionArgs(options));
+  if (opts.dryRun) {
+    args.push("--dry-run");
+  }
+  return [...args, "-o", "json"];
+}
+
+// ---------------------------------------------------------------------------
 // Version gate / capabilities
 // ---------------------------------------------------------------------------
 

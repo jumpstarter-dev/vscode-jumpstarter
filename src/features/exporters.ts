@@ -62,6 +62,20 @@ interface LocalExporterNode {
   config: ExporterConfigRef;
 }
 
+/**
+ * The section local exporters live under.
+ *
+ * They are a different kind of thing from everything above them — no
+ * controller, no lease, no one else can see them — so they get their own
+ * section rather than sitting among the cluster's exporters.
+ */
+interface LocalSectionNode {
+  kind: "localSection";
+  configs: ExporterConfigRef[];
+  /** Open the section by default when there is nothing else in the view. */
+  expanded: boolean;
+}
+
 interface MessageNode {
   kind: "message";
   label: string;
@@ -71,7 +85,12 @@ interface MessageNode {
   command?: vscode.Command;
 }
 
-type ExportersNode = ExporterNode | ExporterSetNode | LocalExporterNode | MessageNode;
+type ExportersNode =
+  | ExporterNode
+  | ExporterSetNode
+  | LocalSectionNode
+  | LocalExporterNode
+  | MessageNode;
 
 type ViewState =
   | { kind: "loading" }
@@ -196,10 +215,15 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
 
   getChildren(element?: ExportersNode): ExportersNode[] {
     if (element) {
-      // A pool expands into its members; nothing else has children.
-      return element.kind === "exporterSet"
-        ? element.group.exporters.map((exporter) => this.exporterNode(exporter))
-        : [];
+      // A pool expands into its members, the local section into its configs;
+      // nothing else has children.
+      if (element.kind === "exporterSet") {
+        return element.group.exporters.map((exporter) => this.exporterNode(exporter));
+      }
+      if (element.kind === "localSection") {
+        return element.configs.map((config) => ({ kind: "localExporter", config }));
+      }
+      return [];
     }
     switch (this.state.kind) {
       case "loading":
@@ -241,23 +265,41 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
         ];
       case "data": {
         const filtered = filterExportersBySelector(this.state.exporters, this.filterPairs);
+        // The local section sits below whatever the cluster shows, including
+        // when the cluster shows nothing: that is the case it exists for.
+        const local = this.localSectionNode();
         if (filtered.length === 0) {
           const label =
             this.state.exporters.length === 0
               ? "No exporters visible to this client"
               : `No exporters match filter '${this.filterRaw}'`;
-          return [{ kind: "message", label, iconId: "info" }];
+          return [{ kind: "message", label, iconId: "info" }, ...local];
         }
         const { sets, standalone } = groupExporterSets(filtered);
         return [
           ...sets.map((group): ExportersNode => ({ kind: "exporterSet", group })),
           ...standalone.map((exporter): ExportersNode => this.exporterNode(exporter)),
-          ...this.localOnlyConfigs().map(
-            (config): ExportersNode => ({ kind: "localExporter", config }),
-          ),
+          ...local,
         ];
       }
     }
+  }
+
+  /**
+   * The "Local Exporters" section, or nothing when there is none to show.
+   *
+   * A label filter is a question about the cluster, so the section is left out
+   * while one is set rather than appearing to have passed it.
+   */
+  private localSectionNode(): ExportersNode[] {
+    if (this.filterPairs.length > 0) {
+      return [];
+    }
+    const configs = this.localOnlyConfigs();
+    if (configs.length === 0) {
+      return [];
+    }
+    return [{ kind: "localSection", configs, expanded: this.exporters.length === 0 }];
   }
 
   /**
@@ -310,10 +352,37 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
       return item;
     }
 
+    if (node.kind === "localSection") {
+      const item = new vscode.TreeItem(
+        "Local Exporters",
+        node.expanded
+          ? vscode.TreeItemCollapsibleState.Expanded
+          : vscode.TreeItemCollapsibleState.Collapsed,
+      );
+      item.id = "local-exporters";
+      item.description = `${node.configs.length} · not registered`;
+      item.tooltip = new vscode.MarkdownString(
+        [
+          "**Local exporters**",
+          "",
+          "Exporter configs on this machine that the controller does not know about.",
+          "",
+          "They are served from here with `jmp shell --exporter <alias>`: no controller,",
+          "no lease, and nobody else can reach them.",
+        ].join("\n"),
+      );
+      item.contextValue = "exporter-local-section";
+      item.iconPath = new vscode.ThemeIcon("beaker", new vscode.ThemeColor("charts.orange"));
+      return item;
+    }
+
     if (node.kind === "localExporter") {
       const item = new vscode.TreeItem(node.config.alias, vscode.TreeItemCollapsibleState.None);
       item.id = `local-exporter/${node.config.alias}`;
-      item.description = "local · not registered";
+      // The section already says these are local; only the name the config
+      // claims is worth repeating, and only when it differs from the alias.
+      item.description =
+        node.config.name !== node.config.alias ? node.config.name : undefined;
       item.tooltip = new vscode.MarkdownString(
         [
           `**${node.config.alias}**`,

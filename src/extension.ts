@@ -10,6 +10,8 @@ import { registerExporters } from "./features/exporters";
 import { registerLeases } from "./features/leases";
 import { registerTesting } from "./features/testing";
 import { registerSchemas } from "./features/schemas";
+import { registerAdmin, resolveAdminOptions } from "./features/admin";
+import { registerManifests } from "./features/manifests";
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Jumpstarter");
@@ -73,6 +75,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // FEATURE REGISTRATION: schemas (YAML schema association + config scaffolds)
   registerSchemas(context, services);
+
+  // FEATURE REGISTRATION: manifests (new-resource wizards, apply a manifest to
+  // the cluster, import a client/exporter config the cluster issued)
+  registerManifests(context, services, () => resolveAdminOptions(services));
+
+  // FEATURE REGISTRATION: admin (tree view jumpstarter.admin — every client,
+  // exporter, set and lease in a namespace; hidden without a usable kubeconfig)
+  registerAdmin(context, services);
 
   // Resolve the Python interpreter, hook environment-change events and run
   // the initial `jmp version` probe (fires onDidChangeAvailability). NOT

@@ -54,6 +54,13 @@
           "icon": "$(zap)"
         },
         {
+          "id": "jumpstarter.admin",
+          "name": "Administration",
+          "icon": "$(zap)",
+          "visibility": "collapsed",
+          "when": "jumpstarter.adminAvailable"
+        },
+        {
           "id": "jumpstarter.details",
           "name": "Details",
           "type": "webview",
@@ -236,6 +243,66 @@
         "command": "jumpstarter.manageTestPin",
         "title": "Manage Test Lease Pin",
         "category": "Jumpstarter"
+      },
+      {
+        "command": "jumpstarter.admin.refresh",
+        "title": "Refresh Cluster Resources",
+        "category": "Jumpstarter",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "jumpstarter.admin.setNamespace",
+        "title": "Administer Namespace…",
+        "category": "Jumpstarter",
+        "icon": "$(symbol-namespace)"
+      },
+      {
+        "command": "jumpstarter.admin.toggleEndedLeases",
+        "title": "Toggle Ended Leases",
+        "category": "Jumpstarter",
+        "icon": "$(history)"
+      },
+      {
+        "command": "jumpstarter.admin.newResource",
+        "title": "New Cluster Resource…",
+        "category": "Jumpstarter",
+        "icon": "$(add)"
+      },
+      {
+        "command": "jumpstarter.admin.importClient",
+        "title": "Import Client Config",
+        "category": "Jumpstarter",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "jumpstarter.admin.importExporter",
+        "title": "Import Exporter Config",
+        "category": "Jumpstarter",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "jumpstarter.importClientConfig",
+        "title": "Import Client Config from Cluster…",
+        "category": "Jumpstarter",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "jumpstarter.importExporterConfig",
+        "title": "Import Exporter Config from Cluster…",
+        "category": "Jumpstarter",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "jumpstarter.applyManifest",
+        "title": "Apply to Cluster",
+        "category": "Jumpstarter",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "jumpstarter.validateManifest",
+        "title": "Validate Manifest Against the Cluster",
+        "category": "Jumpstarter",
+        "icon": "$(check)"
       }
     ],
     "menus": {
@@ -279,6 +346,38 @@
         {
           "command": "jumpstarter.leases.runDeviceCommand",
           "when": "false"
+        },
+        {
+          "command": "jumpstarter.admin.importClient",
+          "when": "false"
+        },
+        {
+          "command": "jumpstarter.admin.importExporter",
+          "when": "false"
+        },
+        {
+          "command": "jumpstarter.importClientConfig",
+          "when": "jumpstarter.adminAvailable"
+        },
+        {
+          "command": "jumpstarter.importExporterConfig",
+          "when": "jumpstarter.adminAvailable"
+        },
+        {
+          "command": "jumpstarter.admin.newResource",
+          "when": "jumpstarter.adminAvailable"
+        },
+        {
+          "command": "jumpstarter.admin.setNamespace",
+          "when": "jumpstarter.adminAvailable"
+        },
+        {
+          "command": "jumpstarter.admin.refresh",
+          "when": "jumpstarter.adminAvailable"
+        },
+        {
+          "command": "jumpstarter.admin.toggleEndedLeases",
+          "when": "jumpstarter.adminAvailable"
         }
       ],
       "view/title": [
@@ -296,6 +395,11 @@
           "command": "jumpstarter.newClientConfig",
           "when": "view == jumpstarter.clients",
           "group": "1_new@1"
+        },
+        {
+          "command": "jumpstarter.importClientConfig",
+          "when": "view == jumpstarter.clients && jumpstarter.adminAvailable",
+          "group": "1_new@2"
         },
         {
           "command": "jumpstarter.exporters.refresh",
@@ -316,6 +420,31 @@
           "command": "jumpstarter.newExporterConfig",
           "when": "view == jumpstarter.exporters",
           "group": "2_new@1"
+        },
+        {
+          "command": "jumpstarter.importExporterConfig",
+          "when": "view == jumpstarter.exporters && jumpstarter.adminAvailable",
+          "group": "2_new@2"
+        },
+        {
+          "command": "jumpstarter.admin.newResource",
+          "when": "view == jumpstarter.admin",
+          "group": "navigation@1"
+        },
+        {
+          "command": "jumpstarter.admin.setNamespace",
+          "when": "view == jumpstarter.admin",
+          "group": "navigation@2"
+        },
+        {
+          "command": "jumpstarter.admin.toggleEndedLeases",
+          "when": "view == jumpstarter.admin",
+          "group": "navigation@3"
+        },
+        {
+          "command": "jumpstarter.admin.refresh",
+          "when": "view == jumpstarter.admin",
+          "group": "navigation@4"
         },
         {
           "command": "jumpstarter.leaseBySelector",
@@ -453,6 +582,45 @@
           "command": "jumpstarter.leases.runDeviceCommand",
           "when": "view == jumpstarter.leases && viewItem == jumpstarterDeviceCommand",
           "group": "inline@1"
+        },
+        {
+          "command": "jumpstarter.admin.importClient",
+          "when": "view == jumpstarter.admin && viewItem == admin-client",
+          "group": "inline@1"
+        },
+        {
+          "command": "jumpstarter.admin.importClient",
+          "when": "view == jumpstarter.admin && viewItem =~ /^admin-client/",
+          "group": "1_config@1"
+        },
+        {
+          "command": "jumpstarter.admin.importExporter",
+          "when": "view == jumpstarter.admin && viewItem == admin-exporter",
+          "group": "inline@1"
+        },
+        {
+          "command": "jumpstarter.admin.importExporter",
+          "when": "view == jumpstarter.admin && viewItem == admin-exporter",
+          "group": "1_config@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "jumpstarter.applyManifest",
+          "when": "jumpstarter.canApplyManifest && jumpstarter.adminAvailable",
+          "group": "navigation@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "jumpstarter.applyManifest",
+          "when": "jumpstarter.canApplyManifest && jumpstarter.adminAvailable",
+          "group": "jumpstarter@1"
+        },
+        {
+          "command": "jumpstarter.validateManifest",
+          "when": "jumpstarter.canApplyManifest && jumpstarter.adminAvailable",
+          "group": "jumpstarter@2"
         }
       ]
     },
@@ -463,6 +631,21 @@
           "type": "string",
           "default": "",
           "markdownDescription": "Path to a `jmp` executable. When set, it is invoked directly instead of resolving `jumpstarter_cli` from the active Python environment."
+        },
+        "jumpstarter.admin.namespace": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Kubernetes namespace the Administration view reads. When empty, follows the namespace of the current client config."
+        },
+        "jumpstarter.admin.kubeconfig": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the kubeconfig used for cluster administration. When empty, the usual `KUBECONFIG` / `~/.kube/config` resolution applies."
+        },
+        "jumpstarter.admin.context": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Kubeconfig context used for cluster administration. When empty, the current context is used."
         },
         "jumpstarter.pollIntervalSeconds": {
           "type": "number",

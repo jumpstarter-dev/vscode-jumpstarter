@@ -18,8 +18,14 @@ import { promises as fs } from "fs";
 import { spawn } from "child_process";
 import { PythonExtension } from "@vscode/python-extension";
 import * as protocol from "./jmpProtocol";
-import { JmpError, JmpCapabilities, CreateLeaseOptions } from "./jmpProtocol";
+import { JmpError, JmpCapabilities, CreateLeaseOptions, AdminOptions } from "./jmpProtocol";
 import {
+  AdminClient,
+  AdminExporter,
+  AdminExporterSet,
+  AdminLease,
+  AdminList,
+  AppliedResource,
   AuthStatus,
   ClientConfigList,
   ExporterConfigRef,
@@ -35,7 +41,13 @@ import {
   LeaseWithDevices,
 } from "../types";
 
-export { JmpError, JmpErrorKind, JmpCapabilities, CreateLeaseOptions } from "./jmpProtocol";
+export {
+  JmpError,
+  JmpErrorKind,
+  JmpCapabilities,
+  CreateLeaseOptions,
+  AdminOptions,
+} from "./jmpProtocol";
 
 /** How jmp will be invoked: an executable plus fixed prefix args. */
 export interface JmpInvocation {
@@ -470,6 +482,84 @@ export class JmpService implements vscode.Disposable {
       protocol.buildDescribeLeaseWithDevicesArgs(client, name),
       { timeoutMs: 120_000 },
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // Cluster administration
+  //
+  // These use the user's kubeconfig instead of a client token, so they see
+  // every resource in a namespace rather than the ones one client can reach.
+  // -------------------------------------------------------------------------
+
+  /** `jmp admin get <kind> -o json`, unwrapped to the list's items. */
+  private async adminList<T>(kind: protocol.AdminKind, options: AdminOptions): Promise<T[]> {
+    const res = await this.runJson<AdminList<T>>(protocol.buildAdminGetArgs(kind, options));
+    return res.items ?? [];
+  }
+
+  adminClients(options: AdminOptions = {}): Promise<AdminClient[]> {
+    return this.adminList<AdminClient>("client", options);
+  }
+
+  adminExporters(options: AdminOptions = {}): Promise<AdminExporter[]> {
+    return this.adminList<AdminExporter>("exporter", options);
+  }
+
+  adminLeases(options: AdminOptions = {}): Promise<AdminLease[]> {
+    return this.adminList<AdminLease>("lease", options);
+  }
+
+  adminExporterSets(options: AdminOptions = {}): Promise<AdminExporterSet[]> {
+    return this.adminList<AdminExporterSet>("exporterset", options);
+  }
+
+  /**
+   * Whether this machine can administer a Jumpstarter cluster: a kubeconfig
+   * that resolves, and the Jumpstarter CRDs served by the cluster it points
+   * at. Listing clients answers both at once. Never throws.
+   */
+  async probeAdmin(options: AdminOptions = {}): Promise<{ ok: boolean; reason?: string }> {
+    try {
+      await this.adminClients(options);
+      return { ok: true };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.log(`[admin] unavailable: ${reason}`);
+      return { ok: false, reason };
+    }
+  }
+
+  /**
+   * `jmp admin import <kind> <name> -o path` — write the config the cluster
+   * generated for an existing client or exporter to disk, and return where.
+   *
+   * The config carries a token, so it is fetched straight into a file by the
+   * CLI: the credential never passes through this process.
+   */
+  async adminImportConfig(
+    kind: "client" | "exporter",
+    name: string,
+    options: AdminOptions = {},
+    access: protocol.ImportDriverAccess & { out?: string } = {},
+  ): Promise<string> {
+    const { stdout } = await this.run(
+      protocol.buildAdminImportArgs(kind, name, options, access),
+      { timeoutMs: 60_000 },
+    );
+    return stdout.trim();
+  }
+
+  /** `jmp admin apply -f <file> -o json` — create or update cluster resources. */
+  async adminApply(
+    files: readonly string[],
+    options: AdminOptions = {},
+    opts: { dryRun?: boolean } = {},
+  ): Promise<AppliedResource[]> {
+    const res = await this.runJson<AdminList<AppliedResource>>(
+      protocol.buildAdminApplyArgs(files, options, opts),
+      { timeoutMs: 60_000 },
+    );
+    return res.items ?? [];
   }
 
   /**

@@ -18,6 +18,10 @@ active Python environment, so what you see in VS Code always matches what
   for config validation and completion (optional; the rest works without it).
 - A Jumpstarter client configuration (`jmp login` / `jmp config client create`)
   to talk to a controller — the extension can create one for you (see below).
+- For the Administration view only: a kubeconfig with access to the cluster
+  the Jumpstarter CRDs are installed in. Without one, that view stays hidden
+  and everything else works as before. No Kubernetes extension is required —
+  administration goes through `jmp admin`, which reads the kubeconfig itself.
 
 ## Installation
 
@@ -75,6 +79,10 @@ upstream review:
 | `cli-client-list-redact-credentials` | `jmp config client list -o json` no longer prints tokens |
 | `cli-driver-list-json` / `cli-driver-schema` | Installed driver types and their config keys, for YAML completion |
 | `client-introspect-lib` / `cli-describe` / `cli-describe-devices` | `jmp describe lease --devices`, which powers the device tree and its runnable commands |
+| `cli-admin-exportersets` | `jmp admin get exporterset`, and the controller labels that let a client tell which pool an exporter belongs to |
+| `cli-admin-apply` | `jmp admin apply -f`, which is how the new-resource wizards send an edited manifest to the cluster |
+| `cli-import-no-credentials` | A readable error, rather than a traceback, for a resource whose credentials the controller has not issued yet |
+| `cli-admin-object-labels` | Labels in `jmp admin get client\|exporter -o json`, so the Administration view can show what an exporter is selected by |
 
 With a `jmp` that predates these changes the extension still starts, and the
 Clients view and YAML driver completion switch themselves off. The rest is
@@ -111,6 +119,14 @@ leaseholder in the tooltip.
 - **Lease by Label Selector…** — build a `key=value` selector interactively
   with a live match count.
 - **Filter Exporters by Selector** to narrow the view.
+- Exporters belonging to an **exporter set** (a pool provisioned on demand)
+  are grouped under the pool, described as `available/total`, with a
+  **Lease from Exporter Set** action that leases any member — including when
+  the pool is cold and one has to be provisioned first.
+- **Local Exporters**, in their own collapsible section at the bottom: configs
+  on this machine the controller does not know about. They are served from
+  here (`jmp shell --exporter <alias>`) with no controller and no lease, which
+  is how you develop a driver before there is a cluster to register it with.
 
 ### Leases view
 
@@ -126,6 +142,38 @@ icon.
   inside the lease session.
 - **Extend Lease…**, **End Lease**, **Copy JMP_LEASE Export Line**,
   **Toggle Ended Leases**.
+- **Connect to Exporter Directly…** (the plug button) opens a session against
+  a standalone exporter by `host:port`, with an optional passphrase. There is
+  no controller in that path, so it is a session rather than a lease and does
+  not appear in this list.
+
+### Administration view
+
+Appears only when this machine can actually administer a cluster: a kubeconfig
+that resolves and a cluster serving the Jumpstarter CRDs. Everything else in
+the extension looks through one client's eyes; this view uses `jmp admin`, so
+it shows **every** client, exporter, exporter set and lease in a namespace,
+whoever owns them.
+
+- The namespace follows your current client's config unless you set one
+  (**Administer Namespace…**, or `jumpstarter.admin.namespace`).
+- **Import Client Config** / **Import Exporter Config** fetch the credentials
+  the cluster issued for an existing resource (`jmp admin import`) and open the
+  resulting YAML for editing. For a client you are asked which driver packages
+  it may load, offered from the drivers installed in your environment.
+- **New Cluster Resource…** drafts a **Client**, **Exporter** or
+  **ExporterSet** as commented YAML and opens it. Nothing is sent until you
+  press **Apply to Cluster** (`jmp admin apply`), so the parts a wizard cannot
+  ask about — an exporter set's template, a client's labels — are edited
+  first. **Validate Manifest Against the Cluster** runs the same thing as a
+  server-side dry run.
+- Any YAML file with a `jumpstarter.dev` `apiVersion` gets the same
+  **Apply to Cluster** button in its editor title, so manifests kept in a repo
+  apply from here too.
+- After applying a Client or Exporter, the extension offers to import the
+  config the controller generated for it.
+- Leases show active ones by default; **Toggle Ended Leases** includes the
+  history.
 
 ### YAML schema support
 
@@ -213,7 +261,10 @@ managed by the extension.
 | Setting | Default | Description |
 | ------- | ------- | ----------- |
 | `jumpstarter.jmpPath` | `""` | Path to a `jmp` executable. When set, it is invoked directly instead of resolving `jumpstarter_cli` from the active Python environment. |
-| `jumpstarter.pollIntervalSeconds` | `15` | How often (in seconds) the Jumpstarter views poll the controller for exporters and leases (minimum 5). |
+| `jumpstarter.pollIntervalSeconds` | `15` | How often (in seconds) the Jumpstarter views poll the controller for exporters and leases (minimum 5). The Administration view polls at half this rate, and never faster than every 30s. |
+| `jumpstarter.admin.namespace` | `""` | Namespace the Administration view reads. Empty follows the current client config's namespace. |
+| `jumpstarter.admin.kubeconfig` | `""` | Kubeconfig for cluster administration. Empty uses the usual `KUBECONFIG` / `~/.kube/config` resolution. |
+| `jumpstarter.admin.context` | `""` | Kubeconfig context for cluster administration. Empty uses the current context. |
 
 ## Security notes
 

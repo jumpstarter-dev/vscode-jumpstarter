@@ -6,6 +6,10 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import {
+  buildAdminApplyArgs,
+  buildAdminGetArgs,
+  buildAdminImportArgs,
+  buildAdminOptionArgs,
   buildAuthStatusArgs,
   buildCreateLeaseArgs,
   buildDeleteLeaseArgs,
@@ -351,6 +355,80 @@ test("buildLocalExporterShellArgs: serves a config by alias", () => {
     "--",
     "pytest",
   ]);
+});
+
+test("buildAdminOptionArgs: only passes what was set, so CLI defaults still apply", () => {
+  assert.deepEqual(buildAdminOptionArgs(), []);
+  assert.deepEqual(buildAdminOptionArgs({ namespace: "lab" }), ["-n", "lab"]);
+  assert.deepEqual(
+    buildAdminOptionArgs({ namespace: "lab", kubeconfig: "/k/config", context: "kind-dev" }),
+    ["-n", "lab", "--kubeconfig", "/k/config", "--context", "kind-dev"],
+  );
+});
+
+test("buildAdminGetArgs: lists a kind, or one resource of it", () => {
+  assert.deepEqual(buildAdminGetArgs("exporter", { namespace: "lab" }), [
+    "admin",
+    "get",
+    "exporter",
+    "-n",
+    "lab",
+    "-o",
+    "json",
+  ]);
+  assert.deepEqual(buildAdminGetArgs("client", {}, "belt"), [
+    "admin",
+    "get",
+    "client",
+    "belt",
+    "-o",
+    "json",
+  ]);
+});
+
+test("buildAdminImportArgs: never prompts, and prints only the path it wrote", () => {
+  const args = buildAdminImportArgs("exporter", "bench", { namespace: "lab" });
+  assert.deepEqual(args, [
+    "admin",
+    "import",
+    "exporter",
+    "bench",
+    "-n",
+    "lab",
+    "--nointeractive",
+    "-o",
+    "path",
+  ]);
+});
+
+test("buildAdminImportArgs: driver access applies to clients only", () => {
+  assert.ok(buildAdminImportArgs("client", "ci", {}, { unsafe: true }).includes("--unsafe"));
+  const allowed = buildAdminImportArgs("client", "ci", {}, { allow: ["a.*", "b.C"] });
+  assert.deepEqual(allowed.slice(4, 6), ["-a", "a.*,b.C"]);
+  // An exporter config has no drivers.allow to set.
+  const exporter = buildAdminImportArgs("exporter", "bench", {}, { unsafe: true, allow: ["a.*"] });
+  assert.ok(!exporter.includes("--unsafe"));
+  assert.ok(!exporter.includes("-a"));
+});
+
+test("buildAdminApplyArgs: one -f per file, dry run only when asked", () => {
+  assert.deepEqual(buildAdminApplyArgs(["/tmp/a.yaml", "/tmp/b.yaml"], { namespace: "lab" }), [
+    "admin",
+    "apply",
+    "-f",
+    "/tmp/a.yaml",
+    "-f",
+    "/tmp/b.yaml",
+    "-n",
+    "lab",
+    "-o",
+    "json",
+  ]);
+  assert.ok(buildAdminApplyArgs(["/tmp/a.yaml"], {}, { dryRun: true }).includes("--dry-run"));
+});
+
+test("buildAdminApplyArgs: refuses to apply nothing", () => {
+  assert.throws(() => buildAdminApplyArgs([], {}), JmpError);
 });
 
 test("isValidAddress: host:port only", () => {

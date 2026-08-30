@@ -123,6 +123,103 @@ export interface ExporterConfigRef {
   name: string;
 }
 
+// ---------------------------------------------------------------------------
+// Cluster administration (`jmp admin get ... -o json`)
+//
+// These are Kubernetes objects, so they carry apiVersion/kind/metadata rather
+// than the flattened shapes the controller reports to a client.
+// ---------------------------------------------------------------------------
+
+export interface AdminObjectMeta {
+  name: string;
+  namespace: string;
+  labels?: Record<string, string> | null;
+  creationTimestamp?: string | null;
+  uid?: string | null;
+}
+
+/** A reference to another object by name (a credential Secret, a client...). */
+export interface AdminNameRef {
+  name: string;
+}
+
+export interface AdminClient {
+  metadata: AdminObjectMeta;
+  status?: {
+    endpoint?: string;
+    credential?: AdminNameRef | null;
+  } | null;
+}
+
+export interface AdminExporterDevice {
+  uuid: string;
+  labels: Record<string, string>;
+}
+
+export interface AdminExporter {
+  metadata: AdminObjectMeta;
+  status?: {
+    endpoint?: string;
+    credential?: AdminNameRef | null;
+    devices?: AdminExporterDevice[] | null;
+  } | null;
+}
+
+export interface AdminLease {
+  metadata: AdminObjectMeta;
+  spec?: {
+    client?: AdminNameRef | null;
+    duration?: string;
+    release?: boolean;
+    selector?: { matchLabels?: Record<string, string> | null } | null;
+  } | null;
+  status?: {
+    beginTime?: string | null;
+    endTime?: string | null;
+    ended?: boolean;
+    exporter?: AdminNameRef | null;
+  } | null;
+}
+
+/** One member exporter of a set, as `jmp admin get exporterset` reports it. */
+export interface AdminExporterSetMember {
+  name: string;
+  labels?: Record<string, string> | null;
+  online?: boolean | null;
+  leased?: boolean | null;
+}
+
+export interface AdminExporterSet {
+  metadata: AdminObjectMeta;
+  spec?: {
+    virtualTargetClassName?: string | null;
+    provisioner?: string | null;
+    bindingMode?: string | null;
+    minReplicas?: number | null;
+    maxReplicas?: number | null;
+    minAvailableReplicas?: number | null;
+    scaleDownCooldown?: string | null;
+    recycleStrategy?: string | null;
+    selector?: Record<string, string> | null;
+    templateLabels?: Record<string, string> | null;
+  } | null;
+  status?: Record<string, number> | null;
+  exporters?: AdminExporterSetMember[] | null;
+}
+
+export interface AdminList<T> {
+  items?: T[];
+}
+
+/** One resource as `jmp admin apply -o json` reports it. */
+export interface AppliedResource {
+  apiVersion: string;
+  kind: string;
+  name: string;
+  namespace: string | null;
+  action: "created" | "configured" | "unchanged";
+}
+
 export type AuthStatusValue =
   | "valid"
   | "expiring-soon"
