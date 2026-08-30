@@ -90,18 +90,6 @@ export function authBadge(status: AuthStatusValue | undefined): AuthBadge {
   }
 }
 
-/**
- * Row icon: a filled blue star marks the current client, an empty star every
- * other one — the same mark as the "set as current" action, so a row shows
- * what pressing that button would make it. Authentication trouble stays
- * visible in the row description, the tooltip and the re-authenticate button.
- */
-export function clientRowIcon(row: ClientRow): { icon: string; color: string | undefined } {
-  return row.isCurrent
-    ? { icon: "star-full", color: "charts.blue" }
-    : { icon: "star-empty", color: undefined };
-}
-
 /** True when the status calls for an interactive re-login. */
 export function needsReauth(status: AuthStatusValue | undefined): boolean {
   return status === "expired" || status === "no-token" || status === "invalid-token";

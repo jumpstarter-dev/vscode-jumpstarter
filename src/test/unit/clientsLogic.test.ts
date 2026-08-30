@@ -13,7 +13,6 @@ import {
   buildClientRows,
   buildLoginArgs,
   buildReauthArgs,
-  clientRowIcon,
   needsReauth,
   parseLoginTarget,
   redactSecretArgs,
@@ -310,18 +309,3 @@ test("buildClientPickEntries: badges in labels, state in description", () => {
   assert.equal(entries[1].detail, undefined);
 });
 
-test("clientRowIcon: filled blue star for current, empty star otherwise", () => {
-  assert.deepEqual(clientRowIcon(makeRow({ isCurrent: true })), {
-    icon: "star-full",
-    color: "charts.blue",
-  });
-  assert.deepEqual(clientRowIcon(makeRow({ isCurrent: false })), {
-    icon: "star-empty",
-    color: undefined,
-  });
-  // Auth trouble does not change the star; it shows in the description.
-  assert.equal(
-    clientRowIcon(makeRow({ isCurrent: false, auth: makeAuth("expired") })).icon,
-    "star-empty",
-  );
-});

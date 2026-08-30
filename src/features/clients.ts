@@ -22,7 +22,6 @@ import { AuthStatus } from "../types";
 import { showDetails } from "./details";
 import {
   authBadge,
-  clientRowIcon,
   buildClientCreateArgs,
   buildClientPickEntries,
   buildClientRows,
@@ -111,13 +110,13 @@ class ClientsTreeProvider implements vscode.TreeDataProvider<ClientNode> {
       return item;
     }
     const row = node.row;
-    const icon = clientRowIcon(row);
+    const badge = authBadge(row.auth?.status);
     const item = new vscode.TreeItem(row.alias, vscode.TreeItemCollapsibleState.None);
     item.id = `jumpstarter-client:${row.alias}`;
     item.description = rowDescription(row);
     item.iconPath = new vscode.ThemeIcon(
-      icon.icon,
-      icon.color ? new vscode.ThemeColor(icon.color) : undefined,
+      badge.icon,
+      badge.color ? new vscode.ThemeColor(badge.color) : undefined,
     );
     item.tooltip = new vscode.MarkdownString(rowTooltipLines(row).join("\n\n"));
     item.contextValue = rowContextValue(row);
@@ -286,6 +285,17 @@ export function registerClients(context: vscode.ExtensionContext, services: Serv
 
   context.subscriptions.push(
     vscode.commands.registerCommand("jumpstarter.clients.refresh", () => poller.refreshNow()),
+
+    // The filled star shown on the current client's row. It marks the row
+    // rather than acting on it; pressing it just says so.
+    vscode.commands.registerCommand("jumpstarter.currentClient", (node?: ClientNode) => {
+      const alias = node?.kind === "client" ? node.row.alias : undefined;
+      void vscode.window.showInformationMessage(
+        alias
+          ? `'${alias}' is already the current Jumpstarter client.`
+          : "This is the current Jumpstarter client.",
+      );
+    }),
 
     vscode.commands.registerCommand(
       "jumpstarter.useClient",
