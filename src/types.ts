@@ -169,10 +169,22 @@ export interface DeviceDriver {
 
 export interface CliParam {
   name: string;
+  /** "argument" (positional) or "option" (spelled by a flag). */
+  kind?: "argument" | "option";
+  /** Click's type name, e.g. "text", "integer", "path", "choice". */
   type: string;
-  help: string;
+  help: string | null;
   required: boolean;
   default: unknown;
+  /** Flags that spell an option ("--address"), or the name for an argument. */
+  opts?: string[];
+  /** A boolean flag takes no value. */
+  is_flag?: boolean;
+  /** The option may be repeated. */
+  multiple?: boolean;
+  nargs?: number;
+  /** Accepted values when the type is a choice. */
+  choices?: string[];
 }
 
 /** Recursive `j` CLI tree from `jmp describe lease --devices`. */

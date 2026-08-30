@@ -7,22 +7,27 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import {
+  buildCommandArgs,
   buildDriverNodes,
   buildExportLine,
   buildLeaseRow,
   collectCommands,
+  CommandDescriptor,
+  describeParam,
   findCliNode,
   formatRemaining,
   formatSpan,
   isActiveStatus,
   isValidDuration,
   isVscodeCreated,
+  optionFlag,
+  promptableParams,
   shortLeaseName,
   sortLeases,
   tailOfPath,
   viewDescription,
 } from "../../features/leases/model";
-import { CliTreeNode, Lease, LeaseDevices } from "../../types";
+import { CliParam, CliTreeNode, Lease, LeaseDevices } from "../../types";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -342,4 +347,133 @@ test("viewDescription", () => {
   assert.equal(viewDescription(null, false), "");
   assert.equal(viewDescription("kirk", false), "kirk");
   assert.equal(viewDescription("kirk", true), "kirk · incl. ended");
+});
+
+// ---------------------------------------------------------------------------
+// Running a command with parameters
+// ---------------------------------------------------------------------------
+
+function makeParam(overrides: Partial<CliParam> = {}): CliParam {
+  return {
+    name: "port",
+    kind: "argument",
+    type: "integer",
+    help: null,
+    required: true,
+    default: null,
+    opts: ["port"],
+    is_flag: false,
+    multiple: false,
+    nargs: 1,
+    ...overrides,
+  };
+}
+
+function makeCommand(params: CliParam[]): CommandDescriptor {
+  return { cliPath: ["net", "forward-tcp"], label: "j net forward-tcp", tooltip: "", params };
+}
+
+test("promptableParams: splits required from optional", () => {
+  const required = makeParam();
+  const optional = makeParam({ name: "address", kind: "option", required: false });
+  const split = promptableParams(makeCommand([optional, required]));
+  assert.deepEqual(split.required.map((p) => p.name), ["port"]);
+  assert.deepEqual(split.optional.map((p) => p.name), ["address"]);
+});
+
+test("optionFlag: prefers the long form", () => {
+  assert.equal(optionFlag(makeParam({ opts: ["-a", "--address"] })), "--address");
+  assert.equal(optionFlag(makeParam({ opts: [] })), "--port");
+});
+
+test("describeParam: names the flag, its type and default", () => {
+  assert.equal(describeParam(makeParam()), "port (integer)");
+  assert.equal(
+    describeParam(
+      makeParam({
+        name: "address",
+        kind: "option",
+        type: "text",
+        required: false,
+        default: "0.0.0.0",
+        opts: ["--address"],
+      }),
+    ),
+    "--address [default: 0.0.0.0]",
+  );
+});
+
+test("buildCommandArgs: positional arguments follow the cli path", () => {
+  const args = buildCommandArgs(makeCommand([makeParam()]), new Map([["port", "8080"]]));
+  assert.deepEqual(args, ["net", "forward-tcp", "8080"]);
+});
+
+test("buildCommandArgs: options are spelled by flag and precede arguments", () => {
+  const command = makeCommand([
+    makeParam({ name: "address", kind: "option", required: false, opts: ["--address"] }),
+    makeParam(),
+  ]);
+  const args = buildCommandArgs(
+    command,
+    new Map([
+      ["address", "127.0.0.1"],
+      ["port", "8080"],
+    ]),
+  );
+  // Options first, so a positional value that looks like a flag is not read as one.
+  assert.deepEqual(args, ["net", "forward-tcp", "--address", "127.0.0.1", "8080"]);
+});
+
+test("buildCommandArgs: a boolean flag appears only when true", () => {
+  const command = makeCommand([
+    makeParam({
+      name: "verbose",
+      kind: "option",
+      required: false,
+      is_flag: true,
+      opts: ["--verbose"],
+    }),
+  ]);
+  assert.deepEqual(buildCommandArgs(command, new Map([["verbose", true]])), [
+    "net",
+    "forward-tcp",
+    "--verbose",
+  ]);
+  assert.deepEqual(buildCommandArgs(command, new Map([["verbose", false]])), [
+    "net",
+    "forward-tcp",
+  ]);
+});
+
+test("buildCommandArgs: a repeatable option contributes one flag per value", () => {
+  const command = makeCommand([
+    makeParam({ name: "tag", kind: "option", required: false, multiple: true, opts: ["--tag"] }),
+  ]);
+  assert.deepEqual(buildCommandArgs(command, new Map([["tag", ["a", "b"]]])), [
+    "net",
+    "forward-tcp",
+    "--tag",
+    "a",
+    "--tag",
+    "b",
+  ]);
+});
+
+test("buildCommandArgs: skipped and empty values are left out", () => {
+  const command = makeCommand([
+    makeParam({ name: "address", kind: "option", required: false, opts: ["--address"] }),
+    makeParam(),
+  ]);
+  const args = buildCommandArgs(
+    command,
+    new Map([
+      ["address", ""],
+      ["port", "8080"],
+    ]),
+  );
+  assert.deepEqual(args, ["net", "forward-tcp", "8080"]);
+});
+
+test("buildCommandArgs: a command with no params is just its path", () => {
+  assert.deepEqual(buildCommandArgs(makeCommand([]), new Map()), ["net", "forward-tcp"]);
 });

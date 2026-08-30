@@ -7,6 +7,7 @@
  */
 
 import {
+  CliParam,
   CliTreeNode,
   Lease,
   LeaseDevices,
@@ -45,6 +46,8 @@ export interface CommandDescriptor {
   /** "j power on" */
   label: string;
   tooltip: string;
+  /** Parameters the command accepts, in Click's declaration order. */
+  params: CliParam[];
 }
 
 export interface DriverNodeDescriptor {
@@ -241,6 +244,7 @@ function makeCommand(node: CliTreeNode, cliPath: string[]): CommandDescriptor {
   }
   return {
     cliPath,
+    params,
     label: `j ${cliPath.join(" ")}`,
     tooltip: lines.join("\n") || `j ${cliPath.join(" ")}`,
   };
@@ -333,4 +337,83 @@ export function viewDescription(client: string | null, includeEnded: boolean): s
     return "";
   }
   return includeEnded ? `${client} · incl. ended` : client;
+}
+
+// ---------------------------------------------------------------------------
+// Running a command with parameters
+// ---------------------------------------------------------------------------
+
+/** A value collected for one parameter; undefined means "leave it out". */
+export type ParamValue = string | boolean | string[] | undefined;
+
+/** Parameters split into the ones that must be answered and the rest. */
+export function promptableParams(command: CommandDescriptor): {
+  required: CliParam[];
+  optional: CliParam[];
+} {
+  const params = command.params ?? [];
+  return {
+    required: params.filter((p) => p.required),
+    optional: params.filter((p) => !p.required),
+  };
+}
+
+/** How an option is spelled on the command line ("--address"). */
+export function optionFlag(param: CliParam): string {
+  const flags = param.opts ?? [];
+  // Prefer the long form; Click lists them in declaration order.
+  return flags.find((f) => f.startsWith("--")) ?? flags[0] ?? `--${param.name}`;
+}
+
+/** One-line summary of a parameter, for a prompt title. */
+export function describeParam(param: CliParam): string {
+  const parts = [param.kind === "option" ? optionFlag(param) : param.name];
+  if (param.type && param.type !== "text") {
+    parts.push(`(${param.type})`);
+  }
+  if (!param.required && param.default !== null && param.default !== undefined) {
+    parts.push(`[default: ${String(param.default)}]`);
+  }
+  return parts.join(" ");
+}
+
+/**
+ * Build the `j` argv for a command from collected parameter values.
+ *
+ * Options are spelled by their flag and come first, so a positional value
+ * that looks like a flag is still read as the argument it is. Arguments keep
+ * Click's declaration order. A boolean flag contributes the flag alone when
+ * true and nothing when false; a repeatable option contributes one flag per
+ * value.
+ */
+export function buildCommandArgs(
+  command: CommandDescriptor,
+  values: ReadonlyMap<string, ParamValue>,
+): string[] {
+  const positional: string[] = [];
+  const options: string[] = [];
+
+  for (const param of command.params ?? []) {
+    const value = values.get(param.name);
+    if (value === undefined || value === "") {
+      continue;
+    }
+    if (param.kind === "option") {
+      if (param.is_flag) {
+        if (value === true) {
+          options.push(optionFlag(param));
+        }
+        continue;
+      }
+      for (const single of Array.isArray(value) ? value : [String(value)]) {
+        options.push(optionFlag(param), single);
+      }
+      continue;
+    }
+    for (const single of Array.isArray(value) ? value : [String(value)]) {
+      positional.push(single);
+    }
+  }
+
+  return [...command.cliPath, ...options, ...positional];
 }

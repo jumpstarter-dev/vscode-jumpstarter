@@ -15,7 +15,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { Services, JmpError } from "../services";
 import { shellQuote } from "../services/jmpProtocol";
-import { Lease } from "../types";
+import { CliParam, Lease } from "../types";
 import { showDetails } from "./details";
 import * as model from "./leases/model";
 import {
@@ -214,6 +214,99 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
     void vscode.window.showErrorMessage(`${prefix}: ${message}`);
   };
 
+  /** Ask for one parameter, using the driver's own help text. */
+  const askForParam = async (
+    command: model.CommandDescriptor,
+    param: CliParam,
+  ): Promise<model.ParamValue | undefined> => {
+    const title = `${command.label} — ${model.describeParam(param)}`;
+    const help = param.help?.trim();
+
+    if (param.is_flag) {
+      const picked = await vscode.window.showQuickPick(
+        [
+          { label: "Yes", description: `pass ${model.optionFlag(param)}`, value: true },
+          { label: "No", description: "leave it out", value: false },
+        ],
+        { title, placeHolder: help ?? "Include this flag?" },
+      );
+      return picked?.value;
+    }
+
+    if (param.choices && param.choices.length > 0) {
+      const picked = await vscode.window.showQuickPick(param.choices, {
+        title,
+        placeHolder: help ?? "Choose a value",
+      });
+      return picked;
+    }
+
+    const value = await vscode.window.showInputBox({
+      title,
+      prompt: help,
+      placeHolder: param.required ? "required" : "leave empty to skip",
+      value: param.default !== null && param.default !== undefined ? String(param.default) : "",
+      ignoreFocusOut: true,
+      validateInput: (input) => {
+        if (param.required && input.trim().length === 0) {
+          return `${param.name} is required`;
+        }
+        if (input.trim().length > 0 && param.type === "integer" && !/^-?\d+$/.test(input.trim())) {
+          return `${param.name} must be a whole number`;
+        }
+        return undefined;
+      },
+    });
+    return value === undefined ? undefined : value.trim();
+  };
+
+  /**
+   * Collect values for a command's parameters. Required ones are asked for in
+   * order; optional ones are offered as a multi-select first, so a command
+   * with none runs straight away. Returns undefined when the user cancels.
+   */
+  const collectParamValues = async (
+    command: model.CommandDescriptor,
+  ): Promise<Map<string, model.ParamValue> | undefined> => {
+    const { required, optional } = model.promptableParams(command);
+    const values = new Map<string, model.ParamValue>();
+
+    for (const param of required) {
+      const value = await askForParam(command, param);
+      if (value === undefined) {
+        return undefined;
+      }
+      values.set(param.name, value);
+    }
+
+    if (optional.length > 0) {
+      const picked = await vscode.window.showQuickPick(
+        optional.map((param) => ({
+          label: model.describeParam(param),
+          description: param.help?.trim(),
+          param,
+        })),
+        {
+          title: `${command.label} — optional parameters`,
+          placeHolder: "Select any to set, or press Enter to run without them",
+          canPickMany: true,
+        },
+      );
+      if (picked === undefined) {
+        return undefined;
+      }
+      for (const { param } of picked) {
+        const value = await askForParam(command, param);
+        if (value === undefined) {
+          return undefined;
+        }
+        values.set(param.name, value);
+      }
+    }
+
+    return values;
+  };
+
   // -- commands -------------------------------------------------------------
 
   context.subscriptions.push(
@@ -367,8 +460,13 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
         if (!n || n.kind !== "command" || !n.descriptor) {
           return;
         }
-        await runInLeaseTerminal(n.descriptor.label, () =>
-          jmp.getShellCommand(n.client, n.leaseName, ["j", ...n.descriptor.cliPath]),
+        const values = await collectParamValues(n.descriptor);
+        if (!values) {
+          return; // cancelled
+        }
+        const args = model.buildCommandArgs(n.descriptor, values);
+        await runInLeaseTerminal(`j ${args.join(" ")}`, () =>
+          jmp.getShellCommand(n.client, n.leaseName, ["j", ...args]),
         );
       },
     ),
