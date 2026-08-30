@@ -95,6 +95,8 @@ export interface DriverSchema {
   package?: string | null;
   version?: string | null;
   description?: string | null;
+  /** Client class the driver is consumed through; what drivers.allow matches. */
+  client?: string | null;
   properties: Record<string, unknown>;
   /** Definitions the properties reference ("#/$defs/..."). */
   defs?: Record<string, unknown>;

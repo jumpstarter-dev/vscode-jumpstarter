@@ -16,6 +16,7 @@ import { DriverSchema } from "../../types";
 type JsonSchema = Record<string, unknown>;
 
 const DRIVER_INSTANCE_BASE = "ExporterConfigV1Alpha1DriverInstanceBase";
+const DRIVER_INSTANCE = "ExporterConfigV1Alpha1DriverInstance";
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -99,71 +100,135 @@ export function configSchemaFor(driver: DriverSchema): JsonSchema {
   };
 }
 
+/** Name of the generated union of driver instances, added to the schema's $defs. */
+export const DRIVER_INSTANCE_UNION = "JumpstarterDriverInstance";
+
 /**
  * Inject installed driver types and their config keys into the exporter schema.
  *
- * The `type` key gains a completable list of installed types while still
- * accepting any string, since an exporter config may legitimately name a
- * driver installed elsewhere. Each known type then contributes an
- * `if type == X then config: {...}` branch.
+ * Every driver becomes one branch of a union: `type` is a const (so it
+ * completes with the driver's documentation) and `config` carries that
+ * driver's own keys. A final guarded branch keeps the original permissive
+ * shape for anything else — composite and proxy nodes, and drivers installed
+ * on the exporter host but not here.
+ *
+ * The shape is dictated by what the YAML language server can actually resolve,
+ * established by probing it directly:
+ *   - `if`/`then` branches never produce completions, so the discriminator has
+ *     to be a `const` inside a union branch;
+ *   - an *unguarded* permissive branch in that union silently suppresses
+ *     completions for every other branch, so the fallback is guarded by
+ *     `type: {not: {enum: [...known]}}` and cannot overlap a known driver.
  */
 export function withDriverCompletions(baseSchema: JsonSchema, drivers: DriverSchema[]): JsonSchema {
   const schema = clone(baseSchema);
   const defs = schema.$defs as Record<string, JsonSchema> | undefined;
   const instance = defs?.[DRIVER_INSTANCE_BASE];
-  if (!instance || drivers.length === 0) {
+  const exportProperty = (schema.properties as Record<string, JsonSchema> | undefined)?.export;
+  if (!defs || !instance || !exportProperty || drivers.length === 0) {
     return schema;
   }
 
-  const properties = instance.properties as Record<string, JsonSchema> | undefined;
-  if (!properties?.type) {
-    return schema;
-  }
-
+  const baseProperties = (instance.properties ?? {}) as Record<string, JsonSchema>;
   const sorted = [...drivers].sort((a, b) => a.type.localeCompare(b.type));
-  properties.type = {
-    title: "Type",
-    description: "Driver class path, e.g. jumpstarter_driver_power.driver.MockPower",
-    anyOf: [
-      {
-        enum: sorted.map((d) => d.type),
-        // Per-value hover/completion detail, honoured by the YAML server.
-        markdownEnumDescriptions: sorted.map((d) => driverDocumentation(d)),
+  const unionRef = { $ref: `#/$defs/${DRIVER_INSTANCE_UNION}` };
+
+  const variants: JsonSchema[] = sorted.map((driver) => {
+    const documentation = driverDocumentation(driver);
+    const hasConfig = Object.keys(driver.properties ?? {}).length > 0;
+    return {
+      type: "object",
+      title: driver.name,
+      ...(documentation ? { markdownDescription: documentation } : {}),
+      properties: {
+        ...clone(baseProperties),
+        type: {
+          const: driver.type,
+          ...(documentation ? { markdownDescription: documentation } : {}),
+        },
+        ...(hasConfig ? { config: configSchemaFor(driver) } : {}),
+        // Nested children complete the same way as top-level exports.
+        children: { type: "object", additionalProperties: unionRef },
       },
-      { type: "string" },
+      required: ["type"],
+    };
+  });
+
+  // Composite nodes, proxies, and drivers this environment does not have.
+  // Guarded so it can never match a type that has its own branch above.
+  const fallback: JsonSchema = {
+    allOf: [
+      { $ref: `#/$defs/${DRIVER_INSTANCE}` },
+      { properties: { type: { not: { enum: sorted.map((d) => d.type) } } } },
     ],
   };
 
-  const withConfig = sorted.filter(
-    (driver) => Object.keys(driver.properties ?? {}).length > 0,
-  );
-  instance.allOf = withConfig.map((driver) => ({
-    if: { properties: { type: { const: driver.type } }, required: ["type"] },
-    then: { properties: { config: configSchemaFor(driver) } },
-  }));
+  defs[DRIVER_INSTANCE_UNION] = { anyOf: [...variants, fallback] };
+  exportProperty.additionalProperties = unionRef;
 
   // Definitions the driver configs reference travel with them, prefixed per
   // driver so identically named models from two drivers cannot collide.
-  for (const driver of withConfig) {
+  for (const driver of sorted) {
     Object.assign(defs, namespacedDefs(driver));
   }
 
   return schema;
 }
 
+/** One completion offered for `drivers.allow`, with what it lets through. */
+export interface AllowEntry {
+  value: string;
+  documentation: string;
+}
+
 /**
- * Glob patterns matching the client packages of installed drivers, for
- * `drivers.allow` in a client config (e.g. "jumpstarter_driver_power.*").
+ * Entries for `drivers.allow` in a client config.
+ *
+ * The allow list is matched against each driver's *client* class, so both the
+ * package-wide glob and the individual client classes are offered — the glob
+ * for "trust this package", the exact classes for a narrower list.
  */
-export function driverAllowPatterns(drivers: DriverSchema[]): string[] {
-  const patterns = new Set<string>();
+export function driverAllowEntries(drivers: DriverSchema[]): AllowEntry[] {
+  const packages = new Map<string, Set<string>>();
+  const clients = new Map<string, string[]>();
+
   for (const driver of drivers) {
-    const root = driver.type.split(".")[0];
-    if (root) {
-      patterns.add(`${root}.*`);
+    const clientClass = driver.client ?? undefined;
+    const root = (clientClass ?? driver.type).split(".")[0];
+    if (!root) {
+      continue;
+    }
+    const names = packages.get(root) ?? new Set<string>();
+    names.add(driver.name);
+    packages.set(root, names);
+
+    if (clientClass) {
+      clients.set(clientClass, [...(clients.get(clientClass) ?? []), driver.name]);
     }
   }
-  return [...patterns].sort();
+
+  const globs: AllowEntry[] = [...packages.entries()]
+    .map(([root, names]) => ({
+      value: `${root}.*`,
+      documentation: `Every driver client in \`${root}\` (${[...names].sort().join(", ")})`,
+    }))
+    .sort((a, b) => a.value.localeCompare(b.value));
+
+  const exact: AllowEntry[] = [...clients.entries()]
+    .map(([clientClass, names]) => ({
+      value: clientClass,
+      documentation: `Client for ${[...new Set(names)].sort().join(", ")}`,
+    }))
+    .sort((a, b) => a.value.localeCompare(b.value));
+
+  return [...globs, ...exact];
+}
+
+/** Package globs only — kept for callers that just want the coarse patterns. */
+export function driverAllowPatterns(drivers: DriverSchema[]): string[] {
+  return driverAllowEntries(drivers)
+    .filter((entry) => entry.value.endsWith(".*"))
+    .map((entry) => entry.value);
 }
 
 /**
@@ -184,13 +249,13 @@ export function withDriverAllowCompletions(
     return schema;
   }
 
-  const patterns = driverAllowPatterns(drivers);
+  const entries = driverAllowEntries(drivers);
   allow.items = {
     anyOf: [
       {
-        enum: [...patterns, "UNSAFE"],
+        enum: [...entries.map((e) => e.value), "UNSAFE"],
         markdownEnumDescriptions: [
-          ...patterns.map((p) => `Allow driver clients from \`${p.replace(".*", "")}\``),
+          ...entries.map((e) => e.documentation),
           "Allow every driver client package (unsafe)",
         ],
       },

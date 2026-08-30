@@ -8,6 +8,7 @@ import * as assert from "node:assert/strict";
 
 import {
   configSchemaFor,
+  driverAllowEntries,
   driverAllowPatterns,
   driverDocumentation,
   withDriverAllowCompletions,
@@ -37,6 +38,7 @@ const EXPORTER_SCHEMA = {
   type: "object",
   properties: { export: { additionalProperties: { $ref: "#/$defs/X" } } },
   $defs: {
+    ExporterConfigV1Alpha1DriverInstance: { anyOf: [{ type: "object" }] },
     ExporterConfigV1Alpha1DriverInstanceBase: {
       type: "object",
       properties: {
@@ -65,31 +67,63 @@ function instanceBase(schema: Record<string, unknown>): Record<string, any> {
   return (schema.$defs as Record<string, any>).ExporterConfigV1Alpha1DriverInstanceBase;
 }
 
-test("withDriverCompletions: offers installed types but still accepts any string", () => {
+function union(schema: Record<string, unknown>): Record<string, any> {
+  return (schema.$defs as Record<string, any>).JumpstarterDriverInstance;
+}
+
+function variantFor(schema: Record<string, unknown>, type: string): Record<string, any> {
+  return union(schema).anyOf.find((v: any) => v.properties?.type?.const === type);
+}
+
+test("withDriverCompletions: one union branch per installed driver", () => {
   const out = withDriverCompletions(EXPORTER_SCHEMA, [makeDriver()]);
-  const typeProp = instanceBase(out).properties.type;
-  assert.deepEqual(typeProp.anyOf[0].enum, ["jumpstarter_driver_network.driver.TcpNetwork"]);
-  assert.equal(typeProp.anyOf[0].markdownEnumDescriptions.length, 1);
-  // A driver installed only on the exporter host must not be flagged invalid.
-  assert.deepEqual(typeProp.anyOf[1], { type: "string" });
+  const variant = variantFor(out, "jumpstarter_driver_network.driver.TcpNetwork");
+  assert.ok(variant);
+  assert.deepEqual(variant.required, ["type"]);
+  assert.match(variant.markdownDescription, /TCP sockets/);
+  // export nodes resolve through the generated union.
+  assert.deepEqual((out.properties as any).export.additionalProperties, {
+    $ref: "#/$defs/JumpstarterDriverInstance",
+  });
 });
 
-test("withDriverCompletions: adds a config branch per driver type", () => {
+test("withDriverCompletions: a branch carries that driver's config keys", () => {
   const out = withDriverCompletions(EXPORTER_SCHEMA, [makeDriver()]);
-  const [branch] = instanceBase(out).allOf;
-  assert.equal(
-    branch.if.properties.type.const,
-    "jumpstarter_driver_network.driver.TcpNetwork",
-  );
-  assert.deepEqual(Object.keys(branch.then.properties.config.properties), ["host", "port"]);
-  assert.deepEqual(branch.then.properties.config.required, ["host", "port"]);
+  const variant = variantFor(out, "jumpstarter_driver_network.driver.TcpNetwork");
+  assert.deepEqual(Object.keys(variant.properties.config.properties), ["host", "port"]);
+  assert.deepEqual(variant.properties.config.required, ["host", "port"]);
 });
 
-test("withDriverCompletions: drivers without config keys get no branch", () => {
+test("withDriverCompletions: drivers without config keys still get a branch", () => {
   const out = withDriverCompletions(EXPORTER_SCHEMA, [
     makeDriver({ name: "MockPower", type: "m.MockPower", properties: {}, required: [] }),
   ]);
-  assert.deepEqual(instanceBase(out).allOf, []);
+  const variant = variantFor(out, "m.MockPower");
+  assert.ok(variant, "the type must still complete");
+  // The generic config key from the base definition is still offered; there
+  // are simply no known keys to complete inside it.
+  assert.equal(variant.properties.config.properties, undefined);
+});
+
+test("withDriverCompletions: nested children resolve through the same union", () => {
+  const out = withDriverCompletions(EXPORTER_SCHEMA, [makeDriver()]);
+  const variant = variantFor(out, "jumpstarter_driver_network.driver.TcpNetwork");
+  assert.deepEqual(variant.properties.children.additionalProperties, {
+    $ref: "#/$defs/JumpstarterDriverInstance",
+  });
+});
+
+test("withDriverCompletions: the fallback cannot overlap a known driver type", () => {
+  // An unguarded permissive branch suppresses completions for every other
+  // branch in the YAML language server, so the guard is load-bearing.
+  const out = withDriverCompletions(EXPORTER_SCHEMA, [makeDriver()]);
+  const fallback = union(out).anyOf.at(-1);
+  assert.deepEqual(fallback.allOf[0], {
+    $ref: "#/$defs/ExporterConfigV1Alpha1DriverInstance",
+  });
+  assert.deepEqual(fallback.allOf[1].properties.type.not.enum, [
+    "jumpstarter_driver_network.driver.TcpNetwork",
+  ]);
 });
 
 test("withDriverCompletions: leaves the schema alone when nothing is installed", () => {
@@ -114,11 +148,11 @@ test("withDriverCompletions: driver definitions travel with their refs", () => {
   const out = withDriverCompletions(EXPORTER_SCHEMA, [driver]);
   const defs = out.$defs as Record<string, unknown>;
   const prefix = "jumpstarter_driver_xcp_driver_Xcp__";
+  const variant = variantFor(out, "jumpstarter_driver_xcp.driver.Xcp");
 
   // Every ref in the generated document must resolve inside it, or the YAML
   // server reports "$ref ... cannot be resolved" over the whole file.
-  const branch = instanceBase(out).allOf[0];
-  assert.equal(branch.then.properties.config.properties.protocol.$ref, `#/$defs/${prefix}XcpEthProtocol`);
+  assert.equal(variant.properties.config.properties.protocol.$ref, `#/$defs/${prefix}XcpEthProtocol`);
   assert.ok(defs[`${prefix}XcpEthProtocol`]);
 });
 
@@ -183,10 +217,42 @@ test("driverAllowPatterns: one glob per driver package root", () => {
   assert.deepEqual(patterns, ["jumpstarter_driver_network.*", "jumpstarter_driver_power.*"]);
 });
 
-test("withDriverAllowCompletions: completes packages plus UNSAFE", () => {
-  const out = withDriverAllowCompletions(CLIENT_SCHEMA, [makeDriver()]);
+test("withDriverAllowCompletions: completes packages, client classes and UNSAFE", () => {
+  const out = withDriverAllowCompletions(CLIENT_SCHEMA, [
+    makeDriver({ client: "jumpstarter_driver_network.client.NetworkClient" }),
+    makeDriver({
+      name: "MockPower",
+      type: "jumpstarter_driver_power.driver.MockPower",
+      client: "jumpstarter_driver_power.client.PowerClient",
+    }),
+  ]);
   const items = (out.$defs as Record<string, any>).ClientConfigV1Alpha1Drivers.properties.allow
     .items;
-  assert.deepEqual(items.anyOf[0].enum, ["jumpstarter_driver_network.*", "UNSAFE"]);
+  assert.deepEqual(items.anyOf[0].enum, [
+    "jumpstarter_driver_network.*",
+    "jumpstarter_driver_power.*",
+    "jumpstarter_driver_network.client.NetworkClient",
+    "jumpstarter_driver_power.client.PowerClient",
+    "UNSAFE",
+  ]);
   assert.deepEqual(items.anyOf[1], { type: "string" });
+});
+
+test("driverAllowEntries: globs come from the client package, not the driver one", () => {
+  const entries = driverAllowEntries([
+    makeDriver({ client: "jumpstarter_driver_network.client.NetworkClient" }),
+  ]);
+  assert.deepEqual(
+    entries.map((e) => e.value),
+    ["jumpstarter_driver_network.*", "jumpstarter_driver_network.client.NetworkClient"],
+  );
+  assert.match(entries[0].documentation, /TcpNetwork/);
+});
+
+test("driverAllowEntries: a driver with no client class still yields its package", () => {
+  const entries = driverAllowEntries([makeDriver({ client: null })]);
+  assert.deepEqual(
+    entries.map((e) => e.value),
+    ["jumpstarter_driver_network.*"],
+  );
 });
