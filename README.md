@@ -10,12 +10,79 @@ active Python environment, so what you see in VS Code always matches what
 
 - The [Python extension](https://marketplace.visualstudio.com/items?itemName=ms-python.python)
   with an active interpreter/virtualenv selected.
-- `jumpstarter-cli` installed in that environment (`pip install jumpstarter-cli`,
-  or the jumpstarter monorepo's own venv). The extension resolves `jmp` as
-  `<python> -m jumpstarter_cli`; alternatively point the `jumpstarter.jmpPath`
-  setting at a specific `jmp` executable.
+- `jumpstarter-cli` installed in that environment — **for now, from the
+  `ide-cli-integration` branch** (see [Jumpstarter CLI branch](#jumpstarter-cli-branch-temporary)).
+  The extension resolves `jmp` as `<python> -m jumpstarter_cli`; alternatively
+  point the `jumpstarter.jmpPath` setting at a specific `jmp` executable.
+- The [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
+  for config validation and completion (optional; the rest works without it).
 - A Jumpstarter client configuration (`jmp login` / `jmp config client create`)
   to talk to a controller — the extension can create one for you (see below).
+
+## Installation
+
+The extension is not published to the Marketplace yet; build and install it
+from source:
+
+```sh
+git clone https://github.com/jumpstarter-dev/vscode-jumpstarter.git
+cd vscode-jumpstarter
+git switch extension-mvp
+
+corepack enable && pnpm install
+pnpm run package:vsix
+code --install-extension vscode-jumpstarter-*.vsix
+```
+
+Reload the VS Code window afterwards. Reinstalling over the same version
+number replaces the files on disk but leaves the running extension in place,
+so reload (or bump the version) whenever you rebuild.
+
+## Jumpstarter CLI branch (temporary)
+
+The extension reads everything from `jmp`, and several things it needs are
+not in a released `jumpstarter-cli` yet. Until those land upstream, point
+VS Code at a checkout of the
+[`ide-cli-integration`](https://github.com/jumpstarter-dev/jumpstarter/tree/ide-cli-integration)
+branch:
+
+```sh
+git clone https://github.com/jumpstarter-dev/jumpstarter.git
+cd jumpstarter
+git switch ide-cli-integration
+
+cd python
+make sync            # uv sync --all-packages --all-extras -> python/.venv
+```
+
+Then either select that environment in VS Code (**Python: Select
+Interpreter** → `<jumpstarter>/python/.venv/bin/python`), or set:
+
+```json
+{ "jumpstarter.jmpPath": "<jumpstarter>/python/.venv/bin/jmp" }
+```
+
+That branch merges the following changes, each also on its own branch for
+upstream review:
+
+| Branch | What the extension needs it for |
+| ------ | ------------------------------- |
+| `cli-auth-status-json` | `jmp auth status -o json`, so background polling can check a token without triggering an interactive login |
+| `cli-json-status-names` | Exporter status as names rather than protobuf integers, and the derived lease status, in JSON output |
+| `cli-fix-exporter-lease-merge` | `--with leases` no longer drops each exporter's status and labels |
+| `cli-logs-to-stderr` | Log lines on stderr, so they stop corrupting `-o json` payloads |
+| `cli-fix-shell-hook-log` | No phantom "waiting for beforeLease hook" when attaching to a ready lease |
+| `cli-client-list-redact-credentials` | `jmp config client list -o json` no longer prints tokens |
+| `cli-driver-list-json` / `cli-driver-schema` | Installed driver types and their config keys, for YAML completion |
+| `client-introspect-lib` / `cli-describe` / `cli-describe-devices` | `jmp describe lease --devices`, which powers the device tree and its runnable commands |
+
+With a `jmp` that predates these changes the extension still starts, and the
+Clients view and YAML driver completion switch themselves off. The rest is
+best-effort: the device tree and anything else built on a missing subcommand
+reports the CLI's error in place rather than silently doing nothing. The
+capability probe keys off `jmp version`, which cannot distinguish a released
+build from one carrying these unreleased changes — so use the branch above
+until they land.
 
 ## Features
 
@@ -168,3 +235,28 @@ pnpm run package:vsix # build the installable .vsix
 
 Press **F5** ("Run Extension") to launch an Extension Development Host with
 the watch build.
+
+Logic that can be unit-tested lives beside its feature in a `vscode`-free
+module (`src/features/<name>/*.ts`), because `pnpm run test:unit` runs the
+compiled output under plain Node. `pnpm test` drives a real VS Code instance
+and needs a display.
+
+### Testing against local hardware-free exporters
+
+You do not need real hardware. Register a mock exporter against any
+controller and run it locally:
+
+```sh
+jmp admin create exporter mock -l board=mock --save   # writes exporters/mock.yaml
+```
+
+Add drivers to the `export:` block of that file — `MockPower`, an
+`EchoNetwork` console and a `Shell` driver give a device tree with runnable
+commands — then serve it:
+
+```sh
+jmp run --exporter mock
+```
+
+It appears in the Exporters view, and leasing it makes its device tree
+browsable from the Leases view.
