@@ -19,9 +19,23 @@
  * loudly instead of silently passing.
  */
 
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+
+/** Where the test host keeps its config tree; see .vscode-test.mjs. */
+const CONFIG_HOME = process.env.JMP_CLIENT_CONFIG_HOME ?? join(tmpdir(), "jumpstarter-fake");
+
+/** Write a config file if it is not there, and return its path. */
+function configFile(kind, alias, body) {
+  const dir = join(CONFIG_HOME, kind);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `${alias}.yaml`);
+  if (!existsSync(file)) {
+    writeFileSync(file, body);
+  }
+  return file;
+}
 
 const argv = process.argv.slice(2);
 
@@ -125,9 +139,24 @@ const responses = [
       items: [
         {
           alias: "fake",
-          path: join(tmpdir(), "jumpstarter-fake", "clients", "fake.yaml"),
+          path: configFile(
+            "clients",
+            "fake",
+            "apiVersion: jumpstarter.dev/v1alpha1\nkind: ClientConfig\nmetadata:\n  name: fake\n",
+          ),
           endpoint: ENDPOINT,
           metadata: { name: "fake", namespace: "lab" },
+        },
+        {
+          // A second config, so switching the current client is meaningful.
+          alias: "spare",
+          path: configFile(
+            "clients",
+            "spare",
+            "apiVersion: jumpstarter.dev/v1alpha1\nkind: ClientConfig\nmetadata:\n  name: spare\n",
+          ),
+          endpoint: ENDPOINT,
+          metadata: { name: "spare", namespace: "lab" },
         },
       ],
     },
@@ -139,15 +168,36 @@ const responses = [
       items: [
         {
           alias: "registered-local",
-          path: join(tmpdir(), "jumpstarter-fake", "exporters", "registered-local.yaml"),
+          path: configFile(
+            "exporters",
+            "registered-local",
+            "apiVersion: jumpstarter.dev/v1alpha1\nkind: ExporterConfig\nmetadata:\n  name: registered-local\n",
+          ),
           metadata: { name: "registered-local", namespace: "lab" },
         },
         {
           alias: "devbench",
-          path: join(tmpdir(), "jumpstarter-fake", "exporters", "devbench.yaml"),
+          path: configFile(
+            "exporters",
+            "devbench",
+            "apiVersion: jumpstarter.dev/v1alpha1\nkind: ExporterConfig\nmetadata:\n  name: devbench\n",
+          ),
           metadata: { name: "devbench", namespace: "lab" },
         },
       ],
+    },
+  ],
+
+  [
+    () => startsWith("auth", "status") && process.env.JMP_FAKE_AUTH === "expired",
+    {
+      status: "expired",
+      expiresAt: "2020-01-01T00:00:00Z",
+      remainingSeconds: -1,
+      subject: "client:lab:fake:0000",
+      issuer: "https://localhost:8085",
+      authTime: null,
+      refreshTokenStored: false,
     },
   ],
 
@@ -301,8 +351,90 @@ function respond() {
     return true;
   }
 
+  // `describe lease --devices` is what the device tree is built from: the
+  // drivers in the session, and the `j` command tree they expose.
+  if (startsWith("describe", "lease") && has("--devices")) {
+    process.stdout.write(
+      JSON.stringify({
+        lease,
+        devices: {
+          drivers: [
+            {
+              path: "power",
+              driver_path: ["power"],
+              class: "jumpstarter_driver_power.client.PowerClient",
+              description: "Mock power control",
+              methods: ["on", "off", "cycle"],
+            },
+            {
+              path: "storage",
+              driver_path: ["storage"],
+              class: "jumpstarter.client.flasher.FlasherClient",
+              description: "Flash the device",
+              methods: ["flash"],
+            },
+          ],
+          cli_tree: {
+            name: "j",
+            help: "Jumpstarter device CLI",
+            params: [],
+            subcommands: {
+              power: {
+                name: "power",
+                help: "Power control",
+                params: [],
+                subcommands: {
+                  on: { name: "on", help: "Power on", params: [], subcommands: {} },
+                  off: { name: "off", help: "Power off", params: [], subcommands: {} },
+                },
+              },
+              storage: {
+                name: "storage",
+                help: "Storage",
+                params: [],
+                subcommands: {
+                  flash: {
+                    name: "flash",
+                    help: "Flash an image",
+                    // A required argument, so running it has to prompt first.
+                    params: [
+                      {
+                        name: "source",
+                        kind: "argument",
+                        type: "text",
+                        help: "Image to flash",
+                        required: true,
+                        default: null,
+                        opts: ["source"],
+                      },
+                    ],
+                    subcommands: {},
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    );
+    return true;
+  }
+
   if (startsWith("describe")) {
     process.stdout.write(JSON.stringify({ name: argv[2] ?? "", kind: argv[1] ?? "" }));
+    return true;
+  }
+
+  // Creating a client config from a token, and the config-file commands the
+  // Clients view drives.
+  if (startsWith("config", "client", "create")) {
+    const alias = argv[3];
+    configFile(
+      "clients",
+      alias,
+      `apiVersion: jumpstarter.dev/v1alpha1\nkind: ClientConfig\nmetadata:\n  name: ${alias}\n`,
+    );
+    process.stdout.write("ok\n");
     return true;
   }
 

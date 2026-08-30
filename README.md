@@ -314,6 +314,15 @@ Two things make the fake useful as a test double:
 An invocation the fake does not recognize exits 2, so a test that drifts from
 the real argv fails loudly instead of silently passing.
 
+All 40 contributed commands are exercised, along with the scenarios that only
+show up at this level: the views' error rows, an expired token stopping the
+polling instead of triggering a browser login, the confirmations before a lease
+is ended or a client deleted, the argv handed to every terminal, and the
+device tree with its prompted arguments. The host is started with
+`JMP_CLIENT_CONFIG_HOME` pointing at a scratch directory (and the harness
+refuses to run against a real one), so the tests that scaffold and import
+configs write real files without touching yours.
+
 `src/test/integration/harness.ts` has the rest: `activateWithFakeCli()`,
 `treeLabels()` / `childLabels()` / `findItem()` for asserting on what a view
 renders, `waitFor()` for the asynchronous parts, and `stubUi()` to answer

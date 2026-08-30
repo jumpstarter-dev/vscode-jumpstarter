@@ -381,11 +381,11 @@ export function registerLeases(
 
     vscode.commands.registerCommand("jumpstarter.leases.toggleEnded", () => {
       includeEnded = !includeEnded;
-      if (!poller.running) {
-        poller.start();
-      } else {
-        void poller.refreshNow();
-      }
+      // Always re-read: the user just changed what they are asking to see, and
+      // start() only ticks of its own accord while the view is visible — so a
+      // toggle on a stopped poller would otherwise show the old list.
+      poller.start();
+      void poller.refreshNow();
     }),
 
     vscode.commands.registerCommand("jumpstarter.leases.openShell", async (node: unknown) => {

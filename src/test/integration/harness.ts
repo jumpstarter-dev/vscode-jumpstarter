@@ -33,6 +33,17 @@ export function fakeJmpPath(): string {
 /** Where the fake writes its invocation log for this run. */
 let logFile: string | undefined;
 
+/** The config tree the host was pointed at, never the developer's own. */
+export function configHome(): string {
+  const home = process.env.JMP_CLIENT_CONFIG_HOME;
+  assert.ok(home, "JMP_CLIENT_CONFIG_HOME must be set by .vscode-test.mjs");
+  assert.ok(
+    !home.includes(`${path.sep}.config${path.sep}jumpstarter`),
+    `refusing to run against a real config home: ${home}`,
+  );
+  return home;
+}
+
 /**
  * Activate the extension with the fake CLI in place.
  *
@@ -41,7 +52,9 @@ let logFile: string | undefined;
  */
 export async function activateWithFakeCli(): Promise<JumpstarterApi> {
   if (!logFile) {
-    logFile = path.join(mkdtempSync(path.join(tmpdir(), "jmp-fake-")), "calls.log");
+    // .vscode-test.mjs picks the path so the host has it from the start;
+    // fall back to a temp file when a runner did not set one.
+    logFile = process.env.JMP_FAKE_LOG ?? path.join(mkdtempSync(path.join(tmpdir(), "jmp-fake-")), "calls.log");
     writeFileSync(logFile, "");
     process.env.JMP_FAKE_LOG = logFile;
   }
@@ -164,6 +177,47 @@ export function iconIdOf(item: vscode.TreeItem): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
+// Terminals
+// ---------------------------------------------------------------------------
+
+/**
+ * Run something that opens a terminal and return how it was opened.
+ *
+ * Several commands do their work by handing an argv to a terminal rather than
+ * spawning it — a shell in a lease, a local exporter session — so the argv is
+ * the only thing there is to assert on.
+ */
+export async function captureTerminal(
+  run: () => Promise<unknown>,
+  timeoutMs = 15_000,
+): Promise<vscode.TerminalOptions> {
+  let opened: vscode.Terminal | undefined;
+  const subscription = vscode.window.onDidOpenTerminal((terminal) => {
+    opened ??= terminal;
+  });
+  try {
+    await run();
+    await waitFor("a terminal to open", () => opened !== undefined, timeoutMs);
+  } finally {
+    subscription.dispose();
+  }
+  const options = opened!.creationOptions as vscode.TerminalOptions;
+  // Terminals accumulate across a suite and each holds a process.
+  opened!.dispose();
+  return options;
+}
+
+/** The argv a terminal was launched with, as one string. */
+export function terminalArgv(options: vscode.TerminalOptions): string {
+  const args = Array.isArray(options.shellArgs)
+    ? options.shellArgs
+    : options.shellArgs
+      ? [options.shellArgs]
+      : [];
+  return [options.shellPath ?? "", ...args].join(" ");
+}
+
+// ---------------------------------------------------------------------------
 // UI stubs
 // ---------------------------------------------------------------------------
 
@@ -193,7 +247,7 @@ export function stubUi(answers: UiAnswers): () => void {
   const inputs = [...(answers.inputs ?? [])];
   const messages = [...(answers.messages ?? [])];
 
-  window.showQuickPick = async (items: unknown) => {
+  window.showQuickPick = async (items: unknown, options?: vscode.QuickPickOptions) => {
     const resolved = (await items) as (vscode.QuickPickItem | string)[];
     if (quickPicks.length === 0) {
       return undefined;
@@ -202,9 +256,12 @@ export function stubUi(answers: UiAnswers): () => void {
     if (wanted === undefined) {
       return undefined;
     }
-    return resolved.find((item) =>
-      typeof item === "string" ? item === wanted : item.label.includes(wanted),
-    );
+    const matches = (item: vscode.QuickPickItem | string): boolean =>
+      typeof item === "string" ? item === wanted : item.label.includes(wanted);
+    // A multi-select pick expects an array back, not one item.
+    return (options as { canPickMany?: boolean })?.canPickMany
+      ? resolved.filter(matches)
+      : resolved.find(matches);
   };
 
   window.showInputBox = async () => (inputs.length > 0 ? inputs.shift() : undefined);
