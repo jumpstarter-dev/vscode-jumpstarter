@@ -147,6 +147,7 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
         name: terminalName,
         shellPath: shell.command,
         shellArgs: shell.args,
+        env: await jmp.getTerminalEnv(),
       });
       terminal.show();
     } catch (err) {

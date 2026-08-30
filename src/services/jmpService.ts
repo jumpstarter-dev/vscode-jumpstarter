@@ -13,6 +13,8 @@
  */
 
 import * as vscode from "vscode";
+import * as path from "path";
+import { promises as fs } from "fs";
 import { spawn } from "child_process";
 import { PythonExtension } from "@vscode/python-extension";
 import * as protocol from "./jmpProtocol";
@@ -425,6 +427,36 @@ export class JmpService implements vscode.Disposable {
     return {
       command: invocation.command,
       args: [...invocation.prefixArgs, ...protocol.buildShellArgs(client, lease, command)],
+    };
+  }
+
+  /**
+   * Terminal environment that puts the active virtual environment on PATH.
+   *
+   * Two reasons: inside the lease session `python`, `pytest` and `j` should
+   * resolve to the environment jmp itself came from; and presenting the
+   * terminal as already-activated stops the Python extension from typing an
+   * activation command into a shell that is already in that environment.
+   *
+   * Returns undefined when the interpreter is not a virtual environment, so
+   * a system or conda interpreter is left alone.
+   */
+  async getTerminalEnv(): Promise<Record<string, string> | undefined> {
+    const interpreter = await this.pythonPathOrEmpty();
+    if (!interpreter) {
+      return undefined;
+    }
+    const binDir = path.dirname(interpreter);
+    const venvRoot = path.dirname(binDir);
+    try {
+      await fs.stat(path.join(venvRoot, "pyvenv.cfg"));
+    } catch {
+      return undefined;
+    }
+    const currentPath = process.env.PATH ?? "";
+    return {
+      VIRTUAL_ENV: venvRoot,
+      PATH: currentPath ? `${binDir}${path.delimiter}${currentPath}` : binDir,
     };
   }
 

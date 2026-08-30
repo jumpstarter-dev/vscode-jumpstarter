@@ -177,7 +177,8 @@
       {
         "command": "jumpstarter.leases.release",
         "title": "Release Lease",
-        "category": "Jumpstarter"
+        "category": "Jumpstarter",
+        "icon": "$(close)"
       },
       {
         "command": "jumpstarter.leases.copyExport",
@@ -335,6 +336,11 @@
           "command": "jumpstarter.leases.openShell",
           "when": "view == jumpstarter.leases && viewItem =~ /^jumpstarterLease-inUse/",
           "group": "inline@1"
+        },
+        {
+          "command": "jumpstarter.leases.release",
+          "when": "view == jumpstarter.leases && viewItem =~ /^jumpstarterLease-(inUse|waiting)/",
+          "group": "inline@2"
         },
         {
           "command": "jumpstarter.leases.runCurrentFile",
