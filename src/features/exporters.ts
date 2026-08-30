@@ -12,7 +12,8 @@
 
 import * as vscode from "vscode";
 import { JmpError, Services, Poller } from "../services";
-import { Exporter } from "../types";
+import { Exporter, ExporterConfigRef } from "../types";
+import { isValidAddress, redactSecretArgs, shellQuote } from "../services/jmpProtocol";
 import { showDetails } from "./details";
 import { openConfigForEditing } from "./openConfig";
 import {
@@ -49,6 +50,18 @@ interface ExporterSetNode {
   group: ExporterSetGroup;
 }
 
+/**
+ * An exporter configured on this machine that the controller does not show.
+ *
+ * These are development exporters: `jmp shell --exporter <alias>` serves the
+ * config locally and opens a session against it, with no controller, no lease
+ * and no registration.
+ */
+interface LocalExporterNode {
+  kind: "localExporter";
+  config: ExporterConfigRef;
+}
+
 interface MessageNode {
   kind: "message";
   label: string;
@@ -58,7 +71,7 @@ interface MessageNode {
   command?: vscode.Command;
 }
 
-type ExportersNode = ExporterNode | ExporterSetNode | MessageNode;
+type ExportersNode = ExporterNode | ExporterSetNode | LocalExporterNode | MessageNode;
 
 type ViewState =
   | { kind: "loading" }
@@ -82,6 +95,8 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
   private tickSeq = 0;
   /** exporter name -> local exporter YAML path, refreshed on each tick. */
   private configPaths = new Map<string, string>();
+  /** Every locally configured exporter, refreshed on each tick. */
+  private localConfigs: ExporterConfigRef[] = [];
   /** Set by register(); stopped when a tick hits an expired token. */
   poller: Poller | undefined;
 
@@ -153,6 +168,7 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
       // can offer to open them. A failure here must not hide the exporters.
       try {
         const configs = await this.services.jmp.listExporterConfigs();
+        this.localConfigs = configs;
         this.configPaths = new Map(configs.map((c) => [c.name, c.path]));
       } catch (err) {
         this.services.jmp.log(`[exporters] local config list failed: ${String(err)}`);
@@ -236,9 +252,24 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
         return [
           ...sets.map((group): ExportersNode => ({ kind: "exporterSet", group })),
           ...standalone.map((exporter): ExportersNode => this.exporterNode(exporter)),
+          ...this.localOnlyConfigs().map(
+            (config): ExportersNode => ({ kind: "localExporter", config }),
+          ),
         ];
       }
     }
+  }
+
+  /**
+   * Local configs the controller does not report — an exporter being written
+   * or run outside a cluster. Ones the controller does show already appear as
+   * their own row, with the same config reachable from the edit button.
+   */
+  private localOnlyConfigs(): ExporterConfigRef[] {
+    const remote = new Set(this.exporters.map((exporter) => exporter.name));
+    return this.localConfigs
+      .filter((config) => !remote.has(config.name))
+      .sort((a, b) => a.alias.localeCompare(b.alias));
   }
 
   /** One exporter row, carrying its local config path when it has one. */
@@ -276,6 +307,26 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
       item.contextValue = "exporter-set";
       // Stacked layers: this row stands for several exporters.
       item.iconPath = new vscode.ThemeIcon("layers", new vscode.ThemeColor("charts.purple"));
+      return item;
+    }
+
+    if (node.kind === "localExporter") {
+      const item = new vscode.TreeItem(node.config.alias, vscode.TreeItemCollapsibleState.None);
+      item.id = `local-exporter/${node.config.alias}`;
+      item.description = "local · not registered";
+      item.tooltip = new vscode.MarkdownString(
+        [
+          `**${node.config.alias}**`,
+          "",
+          "Configured on this machine and not visible to the controller.",
+          "",
+          "Serve it locally with a shell session — no lease is involved.",
+          "",
+          `Config: \`${node.config.path}\``,
+        ].join("\n"),
+      );
+      item.contextValue = "exporter-local";
+      item.iconPath = new vscode.ThemeIcon("beaker", new vscode.ThemeColor("charts.orange"));
       return item;
     }
 
@@ -491,6 +542,28 @@ export function registerExporters(context: vscode.ExtensionContext, services: Se
     }
   };
 
+  /** Open a terminal running a jmp session; argv is logged redacted. */
+  const openTerminal = async (
+    name: string,
+    getShell: () => Promise<{ command: string; args: string[] }>,
+  ): Promise<void> => {
+    try {
+      const shell = await getShell();
+      services.jmp.log(`terminal "${name}": ${shellQuote([shell.command, ...redactSecretArgs(shell.args)])}`);
+      const terminal = vscode.window.createTerminal({
+        name,
+        shellPath: shell.command,
+        shellArgs: shell.args,
+        env: await services.jmp.getTerminalEnv(),
+      });
+      terminal.show();
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `Jumpstarter: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
+
   const createLease = async (
     client: string,
     opts: { exporterName?: string; selector?: string; label?: string },
@@ -532,6 +605,72 @@ export function registerExporters(context: vscode.ExtensionContext, services: Se
       return poller.refreshNow();
     }),
 
+    // Serve a local exporter config and open a session against it. There is
+    // no controller and no lease: the config is served from this machine.
+    vscode.commands.registerCommand(
+      "jumpstarter.exporters.openLocalShell",
+      async (node?: ExportersNode) => {
+        const config = node?.kind === "localExporter" ? node.config : undefined;
+        if (!config) {
+          void vscode.window.showInformationMessage(
+            "Select a local exporter in the Jumpstarter Exporters view first.",
+          );
+          return;
+        }
+        await openTerminal(
+          `jmp shell --exporter ${config.alias}`,
+          () => services.jmp.getLocalExporterShellCommand(config.alias),
+        );
+      },
+    ),
+
+    // Connect straight to a standalone exporter, bypassing the controller.
+    vscode.commands.registerCommand("jumpstarter.connectDirect", async () => {
+      const address = await vscode.window.showInputBox({
+        title: "Connect to an exporter directly",
+        prompt: "Address the exporter serves on",
+        placeHolder: "host:port",
+        ignoreFocusOut: true,
+        validateInput: (value) =>
+          value.trim().length === 0 || isValidAddress(value)
+            ? undefined
+            : "Enter an address as host:port",
+      });
+      if (!address) {
+        return;
+      }
+
+      const tls = await vscode.window.showQuickPick(
+        [
+          { label: "TLS", description: "verify the exporter's certificate", insecure: false },
+          { label: "No TLS", description: "plaintext connection", insecure: true },
+        ],
+        { title: `Connect to ${address.trim()}`, placeHolder: "Transport" },
+      );
+      if (!tls) {
+        return;
+      }
+
+      const passphrase = await vscode.window.showInputBox({
+        title: `Connect to ${address.trim()}`,
+        prompt: "Passphrase, if the exporter requires one",
+        placeHolder: "leave empty for none",
+        password: true,
+        ignoreFocusOut: true,
+      });
+      if (passphrase === undefined) {
+        return;
+      }
+
+      await openTerminal(`jmp shell ${address.trim()}`, () =>
+        services.jmp.getDirectShellCommand({
+          address: address.trim(),
+          insecure: tls.insecure,
+          passphrase: passphrase.length > 0 ? passphrase : undefined,
+        }),
+      );
+    }),
+
     // Lease any member of a pool: the selector matches every exporter the set
     // owns, so the controller is free to pick one (and to provision another to
     // refill the pool's warm buffer).
@@ -566,18 +705,20 @@ export function registerExporters(context: vscode.ExtensionContext, services: Se
     vscode.commands.registerCommand(
       "jumpstarter.exporters.editConfig",
       async (node?: ExportersNode) => {
-        const target = node?.kind === "exporter" ? node : undefined;
-        if (!target?.configPath) {
+        // Both a registered exporter with a local config and a local-only one.
+        const target =
+          node?.kind === "exporter"
+            ? { path: node.configPath, name: node.exporter.name }
+            : node?.kind === "localExporter"
+              ? { path: node.config.path, name: node.config.alias }
+              : undefined;
+        if (!target?.path) {
           void vscode.window.showInformationMessage(
             "This exporter has no configuration file on this machine.",
           );
           return;
         }
-        await openConfigForEditing(
-          services,
-          target.configPath,
-          `Exporter config '${target.exporter.name}'`,
-        );
+        await openConfigForEditing(services, target.path, `Exporter config '${target.name}'`);
       },
     ),
 

@@ -494,6 +494,33 @@ export class JmpService implements vscode.Disposable {
   }
 
   /**
+   * Argv for a session against a standalone exporter (no controller, no
+   * lease). The passphrase is redacted wherever the argv is logged.
+   */
+  async getDirectShellCommand(
+    options: protocol.DirectConnectOptions,
+    command?: readonly string[],
+  ): Promise<{ command: string; args: string[] }> {
+    const invocation = await this.getInvocation();
+    return {
+      command: invocation.command,
+      args: [...invocation.prefixArgs, ...protocol.buildDirectShellArgs(options, command)],
+    };
+  }
+
+  /** Argv for serving a locally configured exporter and opening a session. */
+  async getLocalExporterShellCommand(
+    alias: string,
+    command?: readonly string[],
+  ): Promise<{ command: string; args: string[] }> {
+    const invocation = await this.getInvocation();
+    return {
+      command: invocation.command,
+      args: [...invocation.prefixArgs, ...protocol.buildLocalExporterShellArgs(alias, command)],
+    };
+  }
+
+  /**
    * Terminal environment that puts the active virtual environment on PATH.
    *
    * Two reasons: inside the lease session `python`, `pytest` and `j` should

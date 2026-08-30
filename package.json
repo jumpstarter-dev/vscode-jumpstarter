@@ -149,13 +149,26 @@
       {
         "command": "jumpstarter.leaseBySelector",
         "title": "Lease by Label Selector…",
-        "category": "Jumpstarter"
+        "category": "Jumpstarter",
+        "icon": "$(add)"
       },
       {
         "command": "jumpstarter.exporters.acquireLease",
         "title": "Acquire Lease",
         "category": "Jumpstarter",
         "icon": "$(play)"
+      },
+      {
+        "command": "jumpstarter.connectDirect",
+        "title": "Connect to Exporter Directly…",
+        "category": "Jumpstarter",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "jumpstarter.exporters.openLocalShell",
+        "title": "Open Local Exporter Shell",
+        "category": "Jumpstarter",
+        "icon": "$(terminal)"
       },
       {
         "command": "jumpstarter.leases.refresh",
@@ -227,6 +240,10 @@
     ],
     "menus": {
       "commandPalette": [
+        {
+          "command": "jumpstarter.exporters.openLocalShell",
+          "when": "false"
+        },
         {
           "command": "jumpstarter.exporters.editConfig",
           "when": "false"
@@ -301,9 +318,19 @@
           "group": "2_new@1"
         },
         {
-          "command": "jumpstarter.leases.refresh",
+          "command": "jumpstarter.leaseBySelector",
           "when": "view == jumpstarter.leases",
           "group": "navigation@1"
+        },
+        {
+          "command": "jumpstarter.connectDirect",
+          "when": "view == jumpstarter.leases",
+          "group": "navigation@2"
+        },
+        {
+          "command": "jumpstarter.leases.refresh",
+          "when": "view == jumpstarter.leases",
+          "group": "navigation@3"
         },
         {
           "command": "jumpstarter.leases.toggleEnded",
@@ -361,6 +388,16 @@
           "command": "jumpstarter.exporters.leaseFromSet",
           "when": "view == jumpstarter.exporters && viewItem == exporter-set",
           "group": "inline@1"
+        },
+        {
+          "command": "jumpstarter.exporters.openLocalShell",
+          "when": "view == jumpstarter.exporters && viewItem == exporter-local",
+          "group": "inline@1"
+        },
+        {
+          "command": "jumpstarter.exporters.editConfig",
+          "when": "view == jumpstarter.exporters && viewItem == exporter-local",
+          "group": "inline@2"
         },
         {
           "command": "jumpstarter.exporters.leaseFromSet",

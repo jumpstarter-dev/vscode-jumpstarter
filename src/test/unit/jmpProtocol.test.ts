@@ -20,6 +20,10 @@ import {
   extractWarnings,
   JmpError,
   parseGitVersion,
+  redactSecretArgs,
+  buildDirectShellArgs,
+  buildLocalExporterShellArgs,
+  isValidAddress,
   normalizeExporterStatus,
   parseJsonOutput,
   resolveConfigHome,
@@ -301,4 +305,59 @@ test("normalizeExporterStatus: accepts names, ordinals, null and junk", () => {
   assert.equal(normalizeExporterStatus(undefined), null);
   assert.equal(normalizeExporterStatus("NOPE"), null);
   assert.equal(normalizeExporterStatus(99), null);
+});
+
+// ---------------------------------------------------------------------------
+// Direct and local sessions (no controller, no lease)
+// ---------------------------------------------------------------------------
+
+test("buildDirectShellArgs: address, transport and passphrase", () => {
+  assert.deepEqual(buildDirectShellArgs({ address: "10.0.0.5:8082" }), [
+    "shell",
+    "--tls-grpc",
+    "10.0.0.5:8082",
+  ]);
+  assert.deepEqual(
+    buildDirectShellArgs({ address: "10.0.0.5:8082", insecure: true, passphrase: "hunter2" }),
+    ["shell", "--tls-grpc", "10.0.0.5:8082", "--tls-grpc-insecure", "--passphrase", "hunter2"],
+  );
+});
+
+test("buildDirectShellArgs: a trailing command runs in the session", () => {
+  assert.deepEqual(buildDirectShellArgs({ address: "h:1" }, ["j", "power", "on"]), [
+    "shell",
+    "--tls-grpc",
+    "h:1",
+    "--",
+    "j",
+    "power",
+    "on",
+  ]);
+});
+
+test("redactSecretArgs: a passphrase never reaches the log", () => {
+  const args = buildDirectShellArgs({ address: "h:1", passphrase: "hunter2" });
+  const redacted = redactSecretArgs(args);
+  assert.ok(!redacted.includes("hunter2"), redacted.join(" "));
+  assert.ok(redacted.includes("--passphrase"));
+});
+
+test("buildLocalExporterShellArgs: serves a config by alias", () => {
+  assert.deepEqual(buildLocalExporterShellArgs("bench"), ["shell", "--exporter", "bench"]);
+  assert.deepEqual(buildLocalExporterShellArgs("bench", ["pytest"]), [
+    "shell",
+    "--exporter",
+    "bench",
+    "--",
+    "pytest",
+  ]);
+});
+
+test("isValidAddress: host:port only", () => {
+  for (const good of ["localhost:8082", "10.0.0.5:1", "exporter.lab:65535", "[::1]:8082"]) {
+    assert.equal(isValidAddress(good), true, good);
+  }
+  for (const bad of ["", "localhost", "localhost:", ":8082", "localhost:0", "host:70000", "h:abc"]) {
+    assert.equal(isValidAddress(bad), false, bad);
+  }
 });

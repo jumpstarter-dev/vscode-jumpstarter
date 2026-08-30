@@ -293,6 +293,61 @@ export function buildDriverSchemaArgs(): string[] {
   return ["driver", "schema", "-o", "json"];
 }
 
+/** Options for connecting straight to an exporter, with no controller. */
+export interface DirectConnectOptions {
+  /** host:port the exporter serves on. */
+  address: string;
+  /** Connect without TLS. */
+  insecure?: boolean;
+  /** Shared passphrase, when the exporter requires one. */
+  passphrase?: string;
+}
+
+/**
+ * `jmp shell --tls-grpc host:port ...` — a session against a standalone
+ * exporter. No controller is involved, so there is no lease to acquire or
+ * release.
+ */
+export function buildDirectShellArgs(
+  options: DirectConnectOptions,
+  command?: readonly string[],
+): string[] {
+  const args = ["shell", "--tls-grpc", options.address];
+  if (options.insecure) {
+    args.push("--tls-grpc-insecure");
+  }
+  if (options.passphrase) {
+    args.push("--passphrase", options.passphrase);
+  }
+  if (command && command.length > 0) {
+    args.push("--", ...command);
+  }
+  return args;
+}
+
+/**
+ * `jmp shell --exporter <alias>` — serve a locally configured exporter and
+ * open a session against it, without registering with a controller.
+ */
+export function buildLocalExporterShellArgs(alias: string, command?: readonly string[]): string[] {
+  const args = ["shell", "--exporter", alias];
+  if (command && command.length > 0) {
+    args.push("--", ...command);
+  }
+  return args;
+}
+
+/** True for a plausible host:port, which is all --tls-grpc accepts. */
+export function isValidAddress(value: string): boolean {
+  const trimmed = value.trim();
+  const match = /^\[?([^\]]+)\]?:(\d{1,5})$/.exec(trimmed);
+  if (!match) {
+    return false;
+  }
+  const port = Number(match[2]);
+  return match[1].length > 0 && port > 0 && port <= 65535;
+}
+
 export function buildListExporterConfigsArgs(): string[] {
   return ["config", "exporter", "list", "-o", "json"];
 }
@@ -415,7 +470,7 @@ export function computeCapabilities(gitVersion: string): JmpCapabilities {
 // Secret redaction
 // ---------------------------------------------------------------------------
 
-const SECRET_FLAGS = new Set(["-t", "--token", "--password"]);
+const SECRET_FLAGS = new Set(["-t", "--token", "--password", "--passphrase"]);
 
 /**
  * Replace the value following any secret-bearing flag with "***" (handles
