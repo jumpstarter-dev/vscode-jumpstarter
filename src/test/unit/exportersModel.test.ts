@@ -216,6 +216,14 @@ test("buildExporterItemSpec: held exporter shows leaseholder", () => {
   assert.ok(spec.description.includes("board=rpi4"));
 });
 
+test("buildExporterItemSpec: null status (controller without status reporting)", () => {
+  const spec = buildExporterItemSpec(makeExporter({ status: null }));
+  assert.equal(spec.category, "unknown");
+  assert.equal(spec.contextValue, "exporter-unknown");
+  assert.ok(spec.description.startsWith("unknown"));
+  assert.ok(spec.tooltipMarkdown.includes("`unknown`"));
+});
+
 test("buildExporterItemSpec: offline exporter without labels", () => {
   const spec = buildExporterItemSpec(
     makeExporter({ status: "OFFLINE", online: false, labels: {}, deprecated_labels: {} }),

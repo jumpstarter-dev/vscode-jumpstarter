@@ -14,7 +14,7 @@ import { Exporter, ExporterStatus, leaseRemainingSeconds } from "../../types";
 /** Coarse status bucket used for icon/color and context value. */
 export type ExporterCategory = "available" | "leased" | "offline" | "failed" | "unknown";
 
-export function categorizeExporter(status: ExporterStatus, online: boolean): ExporterCategory {
+export function categorizeExporter(status: ExporterStatus | null, online: boolean): ExporterCategory {
   switch (status) {
     case "AVAILABLE":
       return online ? "available" : "offline";
@@ -205,7 +205,7 @@ export function buildExporterTooltipMarkdown(exporter: Exporter, now: Date = new
   lines.push(`**${exporter.name}**  \n\`${exporter.namespace}\``);
   lines.push("");
   lines.push(
-    `Status: \`${exporter.status}\` (${exporter.online ? "online" : "offline"}` +
+    `Status: \`${exporter.status ?? "unknown"}\` (${exporter.online ? "online" : "offline"}` +
       `${exporter.enabled ? "" : ", disabled"})`,
   );
   const lease = exporter.lease;
@@ -237,7 +237,7 @@ export function buildExporterItemSpec(exporter: Exporter, now: Date = new Date()
   if (exporter.lease) {
     parts.push(`leased by ${exporter.lease.client}`);
   } else if (category !== "available") {
-    parts.push(exporter.status.toLowerCase().replace(/_/g, " "));
+    parts.push((exporter.status ?? "unknown").toLowerCase().replace(/_/g, " "));
   }
   const labelText = formatLabels(effectiveLabels(exporter));
   if (labelText.length > 0) {

@@ -46,7 +46,8 @@ export interface Exporter {
   labels: Record<string, string>;
   deprecated_labels: Record<string, string>;
   online: boolean;
-  status: ExporterStatus;
+  /** Null when the controller does not report exporter status (older builds). */
+  status: ExporterStatus | null;
   enabled: boolean;
   /** The active lease on this exporter, or null when unleased. */
   lease: Lease | null;
