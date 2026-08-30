@@ -89,7 +89,7 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
         // Stale data is still displayed; surface the failure above the tree.
         treeView.message = `Last refresh failed: ${message}`;
       }
-      services.output.appendLine(`[leases] refresh failed: ${message}`);
+      services.jmp.log(`[leases] refresh failed: ${message}`);
     }),
   );
 
@@ -144,6 +144,7 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
   ): Promise<void> => {
     try {
       const shell = await getShell();
+      jmp.log(`terminal "${terminalName}": ${shellQuote([shell.command, ...shell.args])}`);
       const terminal = vscode.window.createTerminal({
         name: terminalName,
         shellPath: shell.command,
@@ -171,12 +172,14 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
   ): Promise<void> => {
     try {
       const shell = await getShell();
+      const line = shellQuote([shell.command, ...shell.args]);
+      jmp.log(`terminal "${terminalName}": ${line}`);
       const terminal = vscode.window.createTerminal({
         name: terminalName,
         env: await jmp.getTerminalEnv(),
       });
       terminal.show();
-      terminal.sendText(shellQuote([shell.command, ...shell.args]));
+      terminal.sendText(line);
     } catch (err) {
       void vscode.window.showErrorMessage(
         `Jumpstarter: ${err instanceof Error ? err.message : String(err)}`,

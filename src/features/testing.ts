@@ -117,7 +117,7 @@ class TestingFeature implements vscode.Disposable {
     this.statusItem.text = pinStatusBarText(pin);
     this.statusItem.tooltip = pinStatusBarTooltip(pin);
     this.statusItem.show();
-    this.services.output.appendLine(
+    this.services.jmp.log(
       `[testing] pinned lease ${pin.leaseName} (client ${pin.clientAlias}) for test runs`,
     );
   }
@@ -130,7 +130,7 @@ class TestingFeature implements vscode.Disposable {
     collection.delete(ENV_LEASE_VAR);
     collection.delete(ENV_CLIENT_VAR);
     this.statusItem.hide();
-    this.services.output.appendLine("[testing] test-run lease pin cleared");
+    this.services.jmp.log("[testing] test-run lease pin cleared");
   }
 
   // -------------------------------------------------------------------------
@@ -243,7 +243,7 @@ class TestingFeature implements vscode.Disposable {
         `Jumpstarter: cleared the test-run lease pin — ${decision.reason}. Test runs will acquire their own leases again.`,
       );
     } else {
-      this.services.output.appendLine(
+      this.services.jmp.log(
         `[testing] restored pin on lease ${pin.leaseName} (client ${pin.clientAlias})`,
       );
     }
@@ -262,7 +262,7 @@ class TestingFeature implements vscode.Disposable {
     } catch (err) {
       const kind = err instanceof JmpError ? err.kind : "unknown";
       const message = err instanceof Error ? err.message : String(err);
-      this.services.output.appendLine(`[testing] pin validation failed (${kind}): ${message}`);
+      this.services.jmp.log(`[testing] pin validation failed (${kind}): ${message}`);
       return { kind: "error", errorKind: kind, message };
     }
   }
@@ -341,7 +341,7 @@ class TestingFeature implements vscode.Disposable {
       return;
     }
     const message = err instanceof Error ? err.message : String(err);
-    this.services.output.appendLine(`[testing] ${what} failed: ${message}`);
+    this.services.jmp.log(`[testing] ${what} failed: ${message}`);
     void vscode.window.showErrorMessage(`Jumpstarter: ${what} failed — ${message}`);
   }
 }

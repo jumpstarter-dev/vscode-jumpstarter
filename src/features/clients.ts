@@ -217,7 +217,7 @@ export function registerClients(context: vscode.ExtensionContext, services: Serv
     services.configWatcher.onDidChangeConfig(() => void poller.refreshNow()),
     services.jmp.onDidChangeAvailability(() => void poller.refreshNow()),
     poller.onTickError((err) => {
-      services.output.appendLine(`[clients] refresh failed: ${String(err)}`);
+      services.jmp.log(`[clients] refresh failed: ${String(err)}`);
     }),
   );
   poller.start();

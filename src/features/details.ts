@@ -16,7 +16,6 @@ export const SHOW_DETAILS_COMMAND = "jumpstarter.details.show";
 class DetailsViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private selection: DetailsSelection | null = null;
-  private expanded = false;
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
@@ -32,10 +31,16 @@ class DetailsViewProvider implements vscode.WebviewViewProvider {
   show(selection: DetailsSelection | null): void {
     this.selection = selection;
     this.render();
-    // The view ships collapsed; expand it the first time there is something to
-    // show, then leave it under the user's control.
-    if (selection && !this.expanded) {
-      this.expanded = true;
+    if (!selection) {
+      return;
+    }
+    // The view ships collapsed and the user may collapse it again, so expand
+    // it on every selection. show(true) keeps focus in the tree; before the
+    // view has been resolved there is nothing to show() yet, and its focus
+    // command is what causes it to resolve.
+    if (this.view) {
+      this.view.show(true);
+    } else {
       void vscode.commands.executeCommand("jumpstarter.details.focus", {
         preserveFocus: true,
       });

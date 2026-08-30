@@ -101,11 +101,14 @@ export class JmpService implements vscode.Disposable {
       this.disposables.push(
         this.pythonApi.environments.onDidChangeActiveEnvironmentPath(() => {
           this.interpreterEmitter.fire();
+          void this.pythonPathOrEmpty().then((p) =>
+            this.log(`Active interpreter changed: ${p || "(none)"}`),
+          );
           void this.probe();
         }),
       );
     } catch (err) {
-      this.output.appendLine(`Python extension unavailable: ${String(err)}`);
+      this.log(`Python extension unavailable: ${String(err)}`);
     }
     await this.probe();
   }
@@ -143,6 +146,11 @@ export class JmpService implements vscode.Disposable {
       }
     }
     this.availability = result;
+    this.log(
+      result.kind === "ok"
+        ? `jmp available: ${result.version.gitVersion} (${result.version.pythonVersion.split(" ")[0]})`
+        : `jmp unavailable: ${result.kind}`,
+    );
     this.availabilityEmitter.fire(result);
     return result;
   }
@@ -171,6 +179,19 @@ export class JmpService implements vscode.Disposable {
       );
     }
     return { command: python, prefixArgs: ["-m", "jumpstarter_cli"] };
+  }
+
+  /**
+   * Append a timestamped line to the "Jumpstarter" output channel — the trace
+   * of everything the extension asks the CLI to do. Arguments are redacted by
+   * the caller; nothing secret reaches this method.
+   */
+  log(message: string): void {
+    const now = new Date();
+    const stamp = [now.getHours(), now.getMinutes(), now.getSeconds()]
+      .map((n) => String(n).padStart(2, "0"))
+      .join(":");
+    this.output.appendLine(`[${stamp}] ${message}`);
   }
 
   private async pythonPathOrEmpty(): Promise<string> {
@@ -208,6 +229,9 @@ export class JmpService implements vscode.Disposable {
     const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const fullArgs = [...invocation.prefixArgs, ...args];
     const safeArgs = protocol.redactSecretArgs(args);
+    const startedAt = Date.now();
+
+    this.log(`$ jmp ${safeArgs.join(" ")}`);
 
     return new Promise<RunResult>((resolve, reject) => {
       const child = spawn(invocation.command, fullArgs, {
@@ -258,15 +282,18 @@ export class JmpService implements vscode.Disposable {
         settled = true;
         clearTimeout(timer);
         const warnings = protocol.extractWarnings(stderr);
+        const elapsed = Date.now() - startedAt;
         if (code === 0) {
           for (const w of warnings) {
-            this.output.appendLine(`[warn] jmp ${args[0] ?? ""}: ${w}`);
+            this.log(`[warn] jmp ${args[0] ?? ""}: ${w}`);
           }
+          this.log(`  ok (${elapsed} ms, ${stdout.length} bytes)`);
           resolve({ stdout, stderr, warnings });
         } else {
           const kind = protocol.classifyError(code, stderr);
-          this.output.appendLine(
-            `[error] jmp ${safeArgs.join(" ")} exited ${code}: ${protocol.summarizeStderr(stderr)}`,
+          this.log(
+            `[error] jmp ${safeArgs.join(" ")} exited ${code} after ${elapsed} ms` +
+              ` (${kind}): ${protocol.summarizeStderr(stderr)}`,
           );
           reject(
             new JmpError(kind, protocol.summarizeStderr(stderr), {
