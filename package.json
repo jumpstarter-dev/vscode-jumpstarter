@@ -2,7 +2,7 @@
   "name": "vscode-jumpstarter",
   "displayName": "Jumpstarter",
   "description": "Jumpstarter Hardware Testing support.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "jumpstarter",
   "author": "Jumpstarter",
   "contributors": [
@@ -100,9 +100,9 @@
       },
       {
         "command": "jumpstarter.openClientConfig",
-        "title": "Open Client Config File",
+        "title": "Edit Client Config",
         "category": "Jumpstarter",
-        "icon": "$(go-to-file)"
+        "icon": "$(edit)"
       },
       {
         "command": "jumpstarter.deleteClient",
@@ -127,6 +127,12 @@
         "title": "Refresh Exporters",
         "category": "Jumpstarter",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "jumpstarter.exporters.editConfig",
+        "title": "Edit Exporter Config",
+        "category": "Jumpstarter",
+        "icon": "$(edit)"
       },
       {
         "command": "jumpstarter.exporters.filter",
@@ -216,6 +222,10 @@
     "menus": {
       "commandPalette": [
         {
+          "command": "jumpstarter.exporters.editConfig",
+          "when": "false"
+        },
+        {
           "command": "jumpstarter.leases.openShell",
           "when": "false"
         },
@@ -303,6 +313,11 @@
           "group": "inline@2"
         },
         {
+          "command": "jumpstarter.openClientConfig",
+          "when": "view == jumpstarter.clients && viewItem =~ /^jumpstarterClient/",
+          "group": "inline@3"
+        },
+        {
           "command": "jumpstarter.useClient",
           "when": "view == jumpstarter.clients && viewItem =~ /^jumpstarterClient(NeedsAuth)?$/",
           "group": "1_actions@1"
@@ -324,12 +339,17 @@
         },
         {
           "command": "jumpstarter.exporters.acquireLease",
-          "when": "view == jumpstarter.exporters && viewItem == exporter-available",
+          "when": "view == jumpstarter.exporters && viewItem =~ /^exporter-available/",
           "group": "inline@1"
         },
         {
+          "command": "jumpstarter.exporters.editConfig",
+          "when": "view == jumpstarter.exporters && viewItem =~ /-local$/",
+          "group": "inline@2"
+        },
+        {
           "command": "jumpstarter.exporters.acquireLease",
-          "when": "view == jumpstarter.exporters && viewItem == exporter-available",
+          "when": "view == jumpstarter.exporters && viewItem =~ /^exporter-available/",
           "group": "1_actions@1"
         },
         {

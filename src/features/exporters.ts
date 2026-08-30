@@ -14,6 +14,7 @@ import * as vscode from "vscode";
 import { JmpError, Services, Poller } from "../services";
 import { Exporter } from "../types";
 import { showDetails } from "./details";
+import { openConfigForEditing } from "./openConfig";
 import {
   buildExporterItemSpec,
   buildSelector,
@@ -34,6 +35,8 @@ import {
 interface ExporterNode {
   kind: "exporter";
   exporter: Exporter;
+  /** Path of the local exporter YAML, when this exporter is configured here. */
+  configPath?: string;
 }
 
 interface MessageNode {
@@ -67,6 +70,8 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
   private filterPairs: SelectorPair[] = [];
   private filterRaw = "";
   private tickSeq = 0;
+  /** exporter name -> local exporter YAML path, refreshed on each tick. */
+  private configPaths = new Map<string, string>();
   /** Set by register(); stopped when a tick hits an expired token. */
   poller: Poller | undefined;
 
@@ -134,6 +139,14 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
       }
       await this.services.jmp.ensureAuthValid(client);
       const exporters = await this.services.jmp.getExporters(client);
+      // Local exporter YAMLs, so rows for exporters configured on this machine
+      // can offer to open them. A failure here must not hide the exporters.
+      try {
+        const configs = await this.services.jmp.listExporterConfigs();
+        this.configPaths = new Map(configs.map((c) => [c.name, c.path]));
+      } catch (err) {
+        this.services.jmp.log(`[exporters] local config list failed: ${String(err)}`);
+      }
       apply({ kind: "data", client, exporters: sortExporters(exporters) });
     } catch (err) {
       if (err instanceof JmpError && err.kind === "auth-expired" && client) {
@@ -206,7 +219,11 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
               : `No exporters match filter '${this.filterRaw}'`;
           return [{ kind: "message", label, iconId: "info" }];
         }
-        return filtered.map((exporter) => ({ kind: "exporter", exporter }));
+        return filtered.map((exporter) => ({
+          kind: "exporter",
+          exporter,
+          configPath: this.configPaths.get(exporter.name),
+        }));
       }
     }
   }
@@ -230,7 +247,9 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
     const tooltip = new vscode.MarkdownString(spec.tooltipMarkdown);
     tooltip.supportThemeIcons = true;
     item.tooltip = tooltip;
-    item.contextValue = spec.contextValue;
+    // "-local" marks rows whose exporter YAML lives on this machine, so the
+    // edit action can be offered only where there is a file to open.
+    item.contextValue = node.configPath ? `${spec.contextValue}-local` : spec.contextValue;
     item.iconPath = new vscode.ThemeIcon(
       spec.icon.id,
       spec.icon.colorId ? new vscode.ThemeColor(spec.icon.colorId) : undefined,
@@ -468,6 +487,25 @@ export function registerExporters(context: vscode.ExtensionContext, services: Se
       poller.start();
       return poller.refreshNow();
     }),
+
+    // Only offered on rows carrying a configPath (contextValue ends "-local").
+    vscode.commands.registerCommand(
+      "jumpstarter.exporters.editConfig",
+      async (node?: ExportersNode) => {
+        const target = node?.kind === "exporter" ? node : undefined;
+        if (!target?.configPath) {
+          void vscode.window.showInformationMessage(
+            "This exporter has no configuration file on this machine.",
+          );
+          return;
+        }
+        await openConfigForEditing(
+          services,
+          target.configPath,
+          `Exporter config '${target.exporter.name}'`,
+        );
+      },
+    ),
 
     // Inline "Acquire lease" on AVAILABLE rows (also works from the context
     // menu; without a node it offers a picker over available exporters).

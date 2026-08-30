@@ -22,6 +22,7 @@ import { JmpError, JmpCapabilities, CreateLeaseOptions } from "./jmpProtocol";
 import {
   AuthStatus,
   ClientConfigList,
+  ExporterConfigRef,
   DriverInfo,
   DriverListResponse,
   Exporter,
@@ -365,6 +366,26 @@ export class JmpService implements vscode.Disposable {
   /** `jmp config client list -o json` — tokens come back REDACTED; keep it that way. */
   listClients(): Promise<ClientConfigList> {
     return this.runJson<ClientConfigList>(protocol.buildListClientsArgs());
+  }
+
+  /**
+   * `jmp config exporter list -o json`, reduced to alias/name/path.
+   *
+   * Unlike the client list, this output still contains exporter tokens, so the
+   * response is narrowed here and the raw objects are never returned, stored
+   * or logged.
+   */
+  async listExporterConfigs(): Promise<ExporterConfigRef[]> {
+    const res = await this.runJson<{
+      items?: { alias?: string; path?: string; metadata?: { name?: string } }[];
+    }>(protocol.buildListExporterConfigsArgs());
+    return (res.items ?? [])
+      .filter((item) => item.alias && item.path)
+      .map((item) => ({
+        alias: item.alias as string,
+        path: item.path as string,
+        name: item.metadata?.name ?? (item.alias as string),
+      }));
   }
 
   /** `jmp config client use <alias>` */

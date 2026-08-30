@@ -289,6 +289,10 @@ export function buildListClientsArgs(): string[] {
   return ["config", "client", "list", "-o", "json"];
 }
 
+export function buildListExporterConfigsArgs(): string[] {
+  return ["config", "exporter", "list", "-o", "json"];
+}
+
 export function buildUseClientArgs(alias: string): string[] {
   return ["config", "client", "use", alias];
 }

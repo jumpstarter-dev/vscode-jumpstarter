@@ -20,6 +20,7 @@ import * as vscode from "vscode";
 import { JmpAvailability, Services } from "../services";
 import { AuthStatus } from "../types";
 import { showDetails } from "./details";
+import { openConfigForEditing } from "./openConfig";
 import {
   authBadge,
   buildClientCreateArgs,
@@ -310,7 +311,7 @@ export function registerClients(context: vscode.ExtensionContext, services: Serv
           return;
         }
         try {
-          await vscode.window.showTextDocument(vscode.Uri.file(row.path));
+          await openConfigForEditing(services, row.path, `Client config '${row.alias}'`);
         } catch (err) {
           showError(`Failed to open ${row.path}`, err);
         }

@@ -88,6 +88,20 @@ export interface ClientConfigList {
   items: ClientConfigItem[];
 }
 
+/**
+ * One locally configured exporter, reduced to what the extension may hold.
+ *
+ * `jmp config exporter list -o json` also returns the exporter's token; it is
+ * dropped at the service boundary and never stored or logged.
+ */
+export interface ExporterConfigRef {
+  alias: string;
+  /** Absolute path of exporters/<alias>.yaml. */
+  path: string;
+  /** metadata.name, which is the name the controller knows it by. */
+  name: string;
+}
+
 export type AuthStatusValue =
   | "valid"
   | "expiring-soon"
