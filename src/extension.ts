@@ -60,7 +60,7 @@ export function activate(context: vscode.ExtensionContext): void {
   registerExporters(context, services);
 
   // FEATURE REGISTRATION: leases (tree view jumpstarter.leases, device tree,
-  // shell / run-in-lease terminals, extend/release)
+  // shell / run-in-lease terminals, extend/end lease)
   registerLeases(context, services);
 
   // FEATURE REGISTRATION: testing (pin a lease for test runs via JMP_LEASE)

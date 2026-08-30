@@ -175,8 +175,8 @@
         "category": "Jumpstarter"
       },
       {
-        "command": "jumpstarter.leases.release",
-        "title": "Release Lease",
+        "command": "jumpstarter.leases.end",
+        "title": "End Lease",
         "category": "Jumpstarter",
         "icon": "$(close)"
       },
@@ -228,7 +228,7 @@
           "when": "false"
         },
         {
-          "command": "jumpstarter.leases.release",
+          "command": "jumpstarter.leases.end",
           "when": "false"
         },
         {
@@ -338,7 +338,7 @@
           "group": "inline@1"
         },
         {
-          "command": "jumpstarter.leases.release",
+          "command": "jumpstarter.leases.end",
           "when": "view == jumpstarter.leases && viewItem =~ /^jumpstarterLease-(inUse|waiting)/",
           "group": "inline@2"
         },
@@ -358,7 +358,7 @@
           "group": "2_manage@1"
         },
         {
-          "command": "jumpstarter.leases.release",
+          "command": "jumpstarter.leases.end",
           "when": "view == jumpstarter.leases && viewItem =~ /^jumpstarterLease-(inUse|waiting)/",
           "group": "2_manage@2"
         },

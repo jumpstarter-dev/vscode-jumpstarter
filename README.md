@@ -57,7 +57,7 @@ icon.
   a command (e.g. `j power on`) to run it in a lease terminal.
 - **Run Current File in Lease** — runs the active editor file with `python`
   inside the lease session.
-- **Extend Lease…**, **Release Lease**, **Copy JMP_LEASE Export Line**,
+- **Extend Lease…**, **End Lease**, **Copy JMP_LEASE Export Line**,
   **Toggle Ended Leases**.
 
 ### YAML schema support

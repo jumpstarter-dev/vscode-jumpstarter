@@ -5,7 +5,7 @@
  *   ensureAuthValid; polling stops on auth-expired and a re-authenticate
  *   message node is shown instead).
  * - Live remaining-time countdown between polls (local timer, no jmp calls).
- * - Per-lease actions: open shell, run current file, extend, release,
+ * - Per-lease actions: open shell, run current file, extend, end lease,
  *   copy JMP_LEASE export line.
  * - In-Use leases expand into a cached device tree (drivers + runnable `j`
  *   commands); command leaves run inside the lease session in a terminal.
@@ -185,7 +185,7 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
   };
 
   /**
-   * Guard for user-initiated remote jmp calls (extend/release): an expired
+   * Guard for user-initiated remote jmp calls (extend/end): an expired
    * token would otherwise send the no-TTY background process into an
    * interactive browser re-auth that hangs until the timeout. Returns true
    * when the call may proceed.
@@ -305,7 +305,7 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
       }
     }),
 
-    vscode.commands.registerCommand("jumpstarter.leases.release", async (node: unknown) => {
+    vscode.commands.registerCommand("jumpstarter.leases.end", async (node: unknown) => {
       const leaseNode = requireLeaseNode(node);
       if (!leaseNode) {
         return;
@@ -313,11 +313,11 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
       const lease = leaseNode.lease;
       const target = lease.exporter_name ? ` on exporter '${lease.exporter_name}'` : "";
       const confirmed = await vscode.window.showWarningMessage(
-        `Release lease '${lease.name}'${target}?`,
+        `End lease '${lease.name}'${target}?`,
         { modal: true },
-        "Release",
+        "End Lease",
       );
-      if (confirmed !== "Release") {
+      if (confirmed !== "End Lease") {
         return;
       }
       if (!(await checkAuth(leaseNode.client))) {
@@ -327,7 +327,7 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
         await jmp.deleteLease(leaseNode.client, lease.name);
         void poller.refreshNow();
       } catch (err) {
-        showJmpError("Failed to release lease", err);
+        showJmpError("Failed to end lease", err);
       }
     }),
 
