@@ -80,12 +80,12 @@ test("categorizeExporter: offline overrides AVAILABLE and UNSPECIFIED", () => {
 
 test("iconForCategory: colors match the spec", () => {
   assert.deepEqual(iconForCategory("available"), {
-    id: "pass",
-    colorId: "charts.green",
-  });
-  assert.deepEqual(iconForCategory("leased"), {
     id: "circle-filled",
     colorId: "charts.blue",
+  });
+  assert.deepEqual(iconForCategory("leased"), {
+    id: "pass-filled",
+    colorId: "charts.green",
   });
   assert.equal(iconForCategory("failed").colorId, "charts.red");
   assert.deepEqual(iconForCategory("offline"), {
@@ -208,7 +208,7 @@ test("buildExporterItemSpec: available exporter", () => {
   assert.equal(spec.label, "rpi4-01");
   assert.equal(spec.contextValue, "exporter-available");
   assert.equal(spec.category, "available");
-  assert.equal(spec.icon.colorId, "charts.green");
+  assert.equal(spec.icon.colorId, "charts.blue");
   assert.equal(spec.description, "board=rpi4, site=lab1");
 });
 
@@ -217,7 +217,7 @@ test("buildExporterItemSpec: held exporter shows leaseholder", () => {
     makeExporter({ status: "LEASE_READY", lease: makeLease({ client: "alice" }) }),
   );
   assert.equal(spec.contextValue, "exporter-leased");
-  assert.equal(spec.icon.colorId, "charts.blue");
+  assert.equal(spec.icon.colorId, "charts.green");
   assert.ok(spec.description.startsWith("leased by alice"));
   assert.ok(spec.description.includes("board=rpi4"));
 });

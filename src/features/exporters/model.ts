@@ -40,10 +40,12 @@ export interface IconSpec {
   colorId: string | undefined;
 }
 
-// All circle-shaped so the column reads as one set of states at a glance.
+// All circle-shaped so the column reads as one set of states at a glance:
+// green check = leased and ready to use, blue = free to take, circle-x = not
+// usable, question = the controller did not report a status.
 const CATEGORY_ICONS: Record<ExporterCategory, IconSpec> = {
-  available: { id: "pass", colorId: "charts.green" },
-  leased: { id: "circle-filled", colorId: "charts.blue" },
+  available: { id: "circle-filled", colorId: "charts.blue" },
+  leased: { id: "pass-filled", colorId: "charts.green" },
   offline: { id: "error", colorId: "disabledForeground" },
   failed: { id: "error", colorId: "charts.red" },
   unknown: { id: "question", colorId: "disabledForeground" },

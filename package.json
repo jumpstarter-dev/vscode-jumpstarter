@@ -57,7 +57,8 @@
           "id": "jumpstarter.details",
           "name": "Details",
           "type": "webview",
-          "icon": "$(zap)"
+          "icon": "$(zap)",
+          "visibility": "collapsed"
         }
       ]
     },
