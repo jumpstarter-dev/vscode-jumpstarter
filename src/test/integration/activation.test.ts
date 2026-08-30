@@ -88,7 +88,8 @@ suite("activation", () => {
       (await treeLabels(api.trees.clients)).includes("fake"),
     );
     const item = await findItem(api.trees.clients, "fake");
-    // The fake reports an OIDC issuer, so the row is a globe.
-    assert.equal(iconIdOf(item), "globe");
+    // The fake holds an API key. It has an issuer, because the token the
+    // controller mints is itself a JWT — which must not make it read as OIDC.
+    assert.equal(iconIdOf(item), "key");
   });
 });

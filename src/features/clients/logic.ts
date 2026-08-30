@@ -69,12 +69,17 @@ export interface AuthBadge {
 /**
  * How the client proves who it is, which is what its icon says.
  *
- * A client that logs in against an issuer gets the globe; one holding a token
- * the cluster issued gets the key; one we have learned nothing about is just
- * an identity.
+ * A client that logged in through a provider gets the globe; one holding an
+ * API key the cluster issued gets the key; one we have learned nothing about
+ * is just an identity.
+ *
+ * The tell is a stored refresh token (or an auth_time claim), both of which
+ * only come out of an interactive login. `issuer` is not a tell: a token the
+ * controller mints is itself a JWT and carries an `iss` claim, so keying off
+ * it calls every API-key client an OIDC one.
  */
 export function authKindIcon(auth: AuthStatus | undefined): string {
-  if (auth?.issuer || auth?.refreshTokenStored) {
+  if (auth?.refreshTokenStored || auth?.authTime) {
     return "globe";
   }
   if (auth && auth.status !== "no-token") {

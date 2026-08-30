@@ -241,7 +241,14 @@ export interface AuthStatus {
   expiresAt: string | null;
   remainingSeconds: number | null;
   subject?: string;
+  /**
+   * The token's `iss` claim. Present for API keys too — the controller mints
+   * them as JWTs — so this does NOT identify an OIDC client.
+   */
   issuer?: string;
+  /** ISO timestamp of the `auth_time` claim; only interactive logins have one. */
+  authTime?: string | null;
+  /** True when a refresh token is stored, which only an OIDC login produces. */
   refreshTokenStored?: boolean;
 }
 

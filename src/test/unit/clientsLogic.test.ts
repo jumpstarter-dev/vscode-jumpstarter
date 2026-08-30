@@ -115,10 +115,18 @@ test("authBadge: severity mapping", () => {
 });
 
 test("authBadge: the icon says how the client authenticates", () => {
-  // An issuer or a stored refresh token means the browser login flow.
-  assert.equal(authBadge("valid", makeAuth("valid", { issuer: "https://sso" })).icon, "globe");
+  // Only an interactive login leaves a refresh token or an auth_time behind.
   assert.equal(authBadge("valid", makeAuth("valid", { refreshTokenStored: true })).icon, "globe");
-  // Otherwise it is holding a token the cluster issued.
+  assert.equal(
+    authBadge("valid", makeAuth("valid", { authTime: "2026-01-01T00:00:00Z" })).icon,
+    "globe",
+  );
+  // An API key the cluster issued is itself a JWT, so it has an issuer too —
+  // keying off that would call every API-key client an OIDC one.
+  assert.equal(
+    authBadge("valid", makeAuth("valid", { issuer: "https://localhost:8085" })).icon,
+    "key",
+  );
   assert.equal(authBadge("valid", makeAuth("valid")).icon, "key");
   assert.equal(authBadge("expired", makeAuth("expired")).icon, "key");
   // Nothing to authenticate with, or nothing known: a plain identity.

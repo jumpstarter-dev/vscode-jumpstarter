@@ -157,9 +157,12 @@ const responses = [
       status: "valid",
       expiresAt: "2099-01-01T00:00:00Z",
       remainingSeconds: 9_999_999,
-      subject: "fake@example.test",
-      issuer: "https://sso.example.test",
-      refreshTokenStored: true,
+      // An API key the controller issued: a JWT, so it has an issuer, but no
+      // refresh token and no auth_time. Nothing here may read as OIDC.
+      subject: "client:lab:fake:0000",
+      issuer: "https://localhost:8085",
+      authTime: null,
+      refreshTokenStored: false,
     },
   ],
 

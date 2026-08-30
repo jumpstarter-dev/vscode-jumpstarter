@@ -39,6 +39,16 @@ import {
 // Tree nodes
 // ---------------------------------------------------------------------------
 
+/**
+ * Colour of the local-development beaker.
+ *
+ * Not charts.orange: several themes define that with an alpha (0.33 in Dark
+ * Modern), which composites against the sidebar into a nearly black brown.
+ * charts.yellow is opaque everywhere, stays in the palette the other rows use,
+ * and reads as its own category next to the green and blue of the cluster.
+ */
+const LOCAL_ICON_COLOR = "charts.yellow";
+
 interface ExporterNode {
   kind: "exporter";
   exporter: Exporter;
@@ -373,7 +383,7 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
         ].join("\n"),
       );
       item.contextValue = "exporter-local-section";
-      item.iconPath = new vscode.ThemeIcon("beaker", new vscode.ThemeColor("charts.orange"));
+      item.iconPath = new vscode.ThemeIcon("beaker", new vscode.ThemeColor(LOCAL_ICON_COLOR));
       return item;
     }
 
@@ -396,7 +406,7 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
         ].join("\n"),
       );
       item.contextValue = "exporter-local";
-      item.iconPath = new vscode.ThemeIcon("beaker", new vscode.ThemeColor("charts.orange"));
+      item.iconPath = new vscode.ThemeIcon("beaker", new vscode.ThemeColor(LOCAL_ICON_COLOR));
       return item;
     }
 

@@ -142,7 +142,9 @@ export function leaseStatusIcon(status: LeaseStatus): { icon: string; color: str
       // pending colour throughout, matching a lease still being acquired.
       return { icon: "unlock", color: "charts.blue" };
     case "Expired":
-      return { icon: "lock", color: "charts.orange" };
+      // Not charts.orange: themes may give it an alpha, and a lease that has
+      // run past its time is the one state that must not fade into the row.
+      return { icon: "lock", color: "charts.red" };
     case "Ended":
       return { icon: "unlock", color: "disabledForeground" };
     default:
