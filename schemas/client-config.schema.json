@@ -1,0 +1,197 @@
+{
+  "$defs": {
+    "ClientConfigV1Alpha1Drivers": {
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allow",
+          "type": "array"
+        },
+        "unsafe": {
+          "default": false,
+          "title": "Unsafe",
+          "type": "boolean"
+        }
+      },
+      "title": "ClientConfigV1Alpha1Drivers",
+      "type": "object"
+    },
+    "ClientConfigV1Alpha1Lease": {
+      "additionalProperties": false,
+      "description": "Configuration for lease operations.",
+      "properties": {
+        "acquisition_timeout": {
+          "default": 7200,
+          "description": "Timeout in seconds for lease acquisition",
+          "minimum": 5,
+          "title": "Acquisition Timeout",
+          "type": "integer"
+        },
+        "dial_timeout": {
+          "default": 60.0,
+          "description": "Timeout in seconds for Dial retry loop when exporter not ready",
+          "minimum": 5,
+          "title": "Dial Timeout",
+          "type": "number"
+        },
+        "retry_timeout": {
+          "default": 300.0,
+          "description": "Timeout in seconds for retrying when exporter is unreachable (0 to disable)",
+          "minimum": 0,
+          "title": "Retry Timeout",
+          "type": "number"
+        }
+      },
+      "title": "ClientConfigV1Alpha1Lease",
+      "type": "object"
+    },
+    "ObjectMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Namespace"
+        }
+      },
+      "required": [
+        "namespace",
+        "name"
+      ],
+      "title": "ObjectMeta",
+      "type": "object"
+    },
+    "ShellConfigV1Alpha1": {
+      "properties": {
+        "use_profiles": {
+          "default": false,
+          "title": "Use Profiles",
+          "type": "boolean"
+        }
+      },
+      "title": "ShellConfigV1Alpha1",
+      "type": "object"
+    },
+    "TLSConfigV1Alpha1": {
+      "properties": {
+        "ca": {
+          "default": "",
+          "title": "Ca",
+          "type": "string"
+        },
+        "insecure": {
+          "default": false,
+          "title": "Insecure",
+          "type": "boolean"
+        }
+      },
+      "title": "TLSConfigV1Alpha1",
+      "type": "object"
+    }
+  },
+  "$id": "https://jumpstarter.dev/schemas/client-config.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "description": "Jumpstarter client configuration (clients/<alias>.yaml).",
+  "properties": {
+    "apiVersion": {
+      "const": "jumpstarter.dev/v1alpha1",
+      "default": "jumpstarter.dev/v1alpha1",
+      "title": "Apiversion",
+      "type": "string"
+    },
+    "drivers": {
+      "$ref": "#/$defs/ClientConfigV1Alpha1Drivers"
+    },
+    "endpoint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Endpoint"
+    },
+    "grpcOptions": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Grpcoptions"
+    },
+    "kind": {
+      "const": "ClientConfig",
+      "default": "ClientConfig",
+      "title": "Kind",
+      "type": "string"
+    },
+    "leases": {
+      "$ref": "#/$defs/ClientConfigV1Alpha1Lease"
+    },
+    "metadata": {
+      "$ref": "#/$defs/ObjectMeta"
+    },
+    "refresh_token": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Refresh Token"
+    },
+    "shell": {
+      "$ref": "#/$defs/ShellConfigV1Alpha1"
+    },
+    "tls": {
+      "$ref": "#/$defs/TLSConfigV1Alpha1"
+    },
+    "token": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Token"
+    }
+  },
+  "title": "ClientConfigV1Alpha1",
+  "type": "object"
+}

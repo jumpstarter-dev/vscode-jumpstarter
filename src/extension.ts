@@ -4,6 +4,11 @@ import { ConfigWatcher } from "./services/configWatcher";
 import { StatusBarManager } from "./services/statusBar";
 import { Poller, PollerOptions } from "./services/poller";
 import { Services } from "./services";
+import { registerClients } from "./features/clients";
+import { registerExporters } from "./features/exporters";
+import { registerLeases } from "./features/leases";
+import { registerTesting } from "./features/testing";
+import { registerSchemas } from "./features/schemas";
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const output = vscode.window.createOutputChannel("Jumpstarter");
@@ -45,27 +50,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Import it at the top of this file and call it here.
   // -------------------------------------------------------------------------
 
-  // FEATURE REGISTRATION: clients (tree view jumpstarter.clients)
-  // import { registerClients } from "./features/clients";
-  // registerClients(context, services);
+  // FEATURE REGISTRATION: clients (tree view jumpstarter.clients, auth flows,
+  // add-client wizard, status bar quick pick)
+  registerClients(context, services);
 
-  // FEATURE REGISTRATION: exporters (tree view jumpstarter.exporters)
-  // import { registerExporters } from "./features/exporters";
-  // registerExporters(context, services);
+  // FEATURE REGISTRATION: exporters (tree view jumpstarter.exporters, lease
+  // acquisition by exporter or label selector)
+  registerExporters(context, services);
 
-  // FEATURE REGISTRATION: leases (tree view jumpstarter.leases)
-  // import { registerLeases } from "./features/leases";
-  // registerLeases(context, services);
+  // FEATURE REGISTRATION: leases (tree view jumpstarter.leases, device tree,
+  // shell / run-in-lease terminals, extend/release)
+  registerLeases(context, services);
 
-  // FEATURE REGISTRATION: shell / lease terminals
-  // import { registerShell } from "./features/shell";
-  // registerShell(context, services);
+  // FEATURE REGISTRATION: testing (pin a lease for test runs via JMP_LEASE)
+  registerTesting(context, services);
 
-  // FEATURE REGISTRATION: auth / login flows
-  // import { registerAuth } from "./features/auth";
-  // registerAuth(context, services);
-
-  void services; // referenced by the feature registrations above
+  // FEATURE REGISTRATION: schemas (YAML schema association + config scaffolds)
+  registerSchemas(context, services);
 }
 
 export function deactivate(): void {}

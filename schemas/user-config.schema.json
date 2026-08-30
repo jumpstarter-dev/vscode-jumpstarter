@@ -1,0 +1,47 @@
+{
+  "$defs": {
+    "UserConfigV1Alpha1Config": {
+      "properties": {
+        "current-client": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Alias of the currently selected client (as saved by `jmp config client use`)."
+        }
+      },
+      "title": "UserConfigV1Alpha1Config",
+      "type": "object"
+    }
+  },
+  "$id": "https://jumpstarter.dev/schemas/user-config.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "The user configuration for the Jumpstarter CLI.",
+  "properties": {
+    "apiVersion": {
+      "const": "jumpstarter.dev/v1alpha1",
+      "default": "jumpstarter.dev/v1alpha1",
+      "title": "Apiversion",
+      "type": "string"
+    },
+    "config": {
+      "$ref": "#/$defs/UserConfigV1Alpha1Config"
+    },
+    "kind": {
+      "const": "UserConfig",
+      "default": "UserConfig",
+      "title": "Kind",
+      "type": "string"
+    }
+  },
+  "required": [
+    "config"
+  ],
+  "title": "UserConfigV1Alpha1",
+  "type": "object"
+}

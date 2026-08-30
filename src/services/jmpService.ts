@@ -192,6 +192,11 @@ export class JmpService implements vscode.Disposable {
    * Run `jmp <args...>` and return raw stdout/stderr. Throws JmpError on
    * non-zero exit, spawn failure or timeout. stderr of successful runs is
    * logged to the output channel as warnings.
+   *
+   * Secret-safe: any argv value following a secret-bearing flag (-t/--token/
+   * --password) is redacted before the argv is logged to the output channel
+   * or embedded in a JmpError, so token-carrying commands never leak
+   * credentials (see redactSecretArgs in jmpProtocol.ts).
    */
   async run(
     args: string[],
@@ -200,6 +205,7 @@ export class JmpService implements vscode.Disposable {
     const invocation = opts.invocation ?? (await this.getInvocation());
     const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const fullArgs = [...invocation.prefixArgs, ...args];
+    const safeArgs = protocol.redactSecretArgs(args);
 
     return new Promise<RunResult>((resolve, reject) => {
       const child = spawn(invocation.command, fullArgs, {
@@ -217,8 +223,8 @@ export class JmpService implements vscode.Disposable {
           reject(
             new JmpError(
               "connection-failed",
-              `jmp ${args.join(" ")} timed out after ${timeoutMs} ms`,
-              { args, stdout, stderr },
+              `jmp ${safeArgs.join(" ")} timed out after ${timeoutMs} ms`,
+              { args: safeArgs, stdout, stderr },
             ),
           );
         }
@@ -235,7 +241,11 @@ export class JmpService implements vscode.Disposable {
         clearTimeout(timer);
         const kind = protocol.classifyError(null, stderr, { spawnErrorCode: err.code });
         reject(
-          new JmpError(kind, `Failed to run jmp: ${err.message}`, { args, stdout, stderr }),
+          new JmpError(kind, `Failed to run jmp: ${err.message}`, {
+            args: safeArgs,
+            stdout,
+            stderr,
+          }),
         );
       });
 
@@ -254,12 +264,12 @@ export class JmpService implements vscode.Disposable {
         } else {
           const kind = protocol.classifyError(code, stderr);
           this.output.appendLine(
-            `[error] jmp ${args.join(" ")} exited ${code}: ${protocol.summarizeStderr(stderr)}`,
+            `[error] jmp ${safeArgs.join(" ")} exited ${code}: ${protocol.summarizeStderr(stderr)}`,
           );
           reject(
             new JmpError(kind, protocol.summarizeStderr(stderr), {
               exitCode: code ?? undefined,
-              args,
+              args: safeArgs,
               stdout,
               stderr,
             }),

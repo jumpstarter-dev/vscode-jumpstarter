@@ -1,0 +1,338 @@
+{
+  "$defs": {
+    "ExporterConfigV1Alpha1DriverInstance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExporterConfigV1Alpha1DriverInstanceBase"
+        },
+        {
+          "$ref": "#/$defs/ExporterConfigV1Alpha1DriverInstanceComposite"
+        },
+        {
+          "$ref": "#/$defs/ExporterConfigV1Alpha1DriverInstanceProxy"
+        }
+      ],
+      "title": "ExporterConfigV1Alpha1DriverInstance"
+    },
+    "ExporterConfigV1Alpha1DriverInstanceBase": {
+      "properties": {
+        "children": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ExporterConfigV1Alpha1DriverInstance"
+          },
+          "title": "Children",
+          "type": "object"
+        },
+        "config": {
+          "additionalProperties": true,
+          "title": "Config",
+          "type": "object"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "methods_description": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Methods Description",
+          "type": "object"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "ExporterConfigV1Alpha1DriverInstanceBase",
+      "type": "object"
+    },
+    "ExporterConfigV1Alpha1DriverInstanceComposite": {
+      "properties": {
+        "children": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ExporterConfigV1Alpha1DriverInstance"
+          },
+          "title": "Children",
+          "type": "object"
+        }
+      },
+      "title": "ExporterConfigV1Alpha1DriverInstanceComposite",
+      "type": "object"
+    },
+    "ExporterConfigV1Alpha1DriverInstanceProxy": {
+      "properties": {
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "title": "ExporterConfigV1Alpha1DriverInstanceProxy",
+      "type": "object"
+    },
+    "FailureDetectionConfigV1Alpha1": {
+      "description": "Configuration for rapid failure detection in the exporter restart loop.\n\nIf the child process fails within ``rapid_failure_window`` seconds of\nstarting, it is counted as a \"rapid failure\".  After\n``max_rapid_failures`` consecutive rapid failures the main process exits\nwith code 1 so that systemd / the container orchestrator can recreate the\ncontainer.",
+      "properties": {
+        "maxRapidFailures": {
+          "default": 5,
+          "description": "Number of consecutive rapid failures before the exporter exits.",
+          "title": "Maxrapidfailures",
+          "type": "integer"
+        },
+        "rapidFailureWindow": {
+          "default": 60,
+          "description": "Seconds - a child that exits faster than this counts as a rapid failure.",
+          "title": "Rapidfailurewindow",
+          "type": "integer"
+        }
+      },
+      "title": "FailureDetectionConfigV1Alpha1",
+      "type": "object"
+    },
+    "HookConfigV1Alpha1": {
+      "description": "Configuration for lifecycle hooks.",
+      "properties": {
+        "afterLease": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HookInstanceConfigV1Alpha1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "beforeLease": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HookInstanceConfigV1Alpha1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "HookConfigV1Alpha1",
+      "type": "object"
+    },
+    "HookInstanceConfigV1Alpha1": {
+      "description": "Configuration for a specific lifecycle hook.",
+      "properties": {
+        "exec": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Interpreter used to execute the script (e.g. /bin/bash, python3). When not set, auto-detected from the script file extension (.py uses the exporter's Python, .sh uses /bin/sh) or defaults to /bin/sh for inline scripts.",
+          "title": "Exec"
+        },
+        "onFailure": {
+          "default": "warn",
+          "description": "Action to take when the expected exit code is not returned: 'endLease' to end the lease, 'exit' takes the exporter offline and ends the lease, 'warn' continues and prints a warning",
+          "enum": [
+            "warn",
+            "endLease",
+            "exit"
+          ],
+          "title": "Onfailure",
+          "type": "string"
+        },
+        "script": {
+          "description": "The j script to execute for this hook",
+          "title": "Script",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 120,
+          "description": "The hook execution timeout in seconds (default: 120s)",
+          "title": "Timeout",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "script"
+      ],
+      "title": "HookInstanceConfigV1Alpha1",
+      "type": "object"
+    },
+    "ObjectMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Namespace"
+        }
+      },
+      "required": [
+        "namespace",
+        "name"
+      ],
+      "title": "ObjectMeta",
+      "type": "object"
+    },
+    "TLSConfigV1Alpha1": {
+      "properties": {
+        "ca": {
+          "default": "",
+          "title": "Ca",
+          "type": "string"
+        },
+        "insecure": {
+          "default": false,
+          "title": "Insecure",
+          "type": "boolean"
+        }
+      },
+      "title": "TLSConfigV1Alpha1",
+      "type": "object"
+    }
+  },
+  "$id": "https://jumpstarter.dev/schemas/exporter-config.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Exporter configuration (jumpstarter.dev/v1alpha1 ExporterConfig).\n\nStores credentials, endpoint, driver tree, hooks, and failure-detection\nsettings for a single exporter instance.  The CLI writes new configs to\n``BASE_PATH`` (user config dir); ``SYSTEM_CONFIG_PATH`` is kept as a\nread fallback for production deployments (systemd units, containers).",
+  "properties": {
+    "apiVersion": {
+      "const": "jumpstarter.dev/v1alpha1",
+      "default": "jumpstarter.dev/v1alpha1",
+      "title": "Apiversion",
+      "type": "string"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "endpoint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Endpoint"
+    },
+    "exitOnLeaseEnd": {
+      "default": false,
+      "title": "Exitonleaseend",
+      "type": "boolean"
+    },
+    "export": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ExporterConfigV1Alpha1DriverInstance"
+      },
+      "title": "Export",
+      "type": "object"
+    },
+    "failureDetection": {
+      "$ref": "#/$defs/FailureDetectionConfigV1Alpha1"
+    },
+    "grpcOptions": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Grpcoptions"
+    },
+    "hooks": {
+      "$ref": "#/$defs/HookConfigV1Alpha1"
+    },
+    "kind": {
+      "const": "ExporterConfig",
+      "default": "ExporterConfig",
+      "title": "Kind",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/ObjectMeta"
+    },
+    "motd": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Motd"
+    },
+    "tls": {
+      "$ref": "#/$defs/TLSConfigV1Alpha1"
+    },
+    "token": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Token"
+    }
+  },
+  "required": [
+    "metadata"
+  ],
+  "title": "ExporterConfigV1Alpha1",
+  "type": "object"
+}

@@ -32,7 +32,10 @@ export class JmpError extends Error {
   readonly exitCode: number | undefined;
   readonly stderr: string;
   readonly stdout: string;
-  /** The full argv (after the interpreter/module prefix) that failed. */
+  /**
+   * The argv (after the interpreter/module prefix) that failed, with values
+   * of secret-bearing flags redacted (see redactSecretArgs).
+   */
   readonly args: readonly string[];
 
   constructor(
@@ -340,6 +343,42 @@ export function computeCapabilities(gitVersion: string): JmpCapabilities {
     exporterStatusColumns: full,
     leaseStatus: full,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Secret redaction
+// ---------------------------------------------------------------------------
+
+const SECRET_FLAGS = new Set(["-t", "--token", "--password"]);
+
+/**
+ * Replace the value following any secret-bearing flag with "***" (handles
+ * both "-t X" and "--token=X" styles). JmpService.run applies this to every
+ * argv before it is logged or embedded in a JmpError, so commands like
+ * `config client create -t TOKEN` can never leak credentials.
+ */
+export function redactSecretArgs(args: readonly string[]): string[] {
+  const out: string[] = [];
+  let redactNext = false;
+  for (const arg of args) {
+    if (redactNext) {
+      out.push("***");
+      redactNext = false;
+      continue;
+    }
+    if (SECRET_FLAGS.has(arg)) {
+      out.push(arg);
+      redactNext = true;
+      continue;
+    }
+    const eq = arg.indexOf("=");
+    if (eq > 0 && SECRET_FLAGS.has(arg.slice(0, eq))) {
+      out.push(`${arg.slice(0, eq)}=***`);
+      continue;
+    }
+    out.push(arg);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
