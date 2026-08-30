@@ -10,6 +10,7 @@
 import * as vscode from "vscode";
 import * as fs from "fs/promises";
 import {
+  SCHEMA_URI_SCHEME,
   SchemaKind,
   schemaFileName,
   schemaKindForFile,
@@ -18,12 +19,16 @@ import {
 } from "./logic";
 
 const YAML_EXTENSION_ID = "redhat.vscode-yaml";
-const CONTRIBUTOR_NAME = "jumpstarter";
 
 /** The (undocumented-but-stable) API exported by redhat.vscode-yaml. */
 interface YamlExtensionApi {
   registerContributor(
-    schema: string,
+    /**
+     * The URI *scheme* this contributor serves — not a display name. Schema
+     * URIs returned by requestSchema are routed back to requestSchemaContent
+     * only when their scheme matches this value.
+     */
+    scheme: string,
     requestSchema: (resource: string) => string | undefined,
     requestSchemaContent?: (uri: string) => Promise<string> | string,
     label?: string,
@@ -98,7 +103,12 @@ export function activateYamlAssociation(deps: YamlAssociationDeps): vscode.Dispo
         );
         return;
       }
-      registered = api.registerContributor(CONTRIBUTOR_NAME, requestSchema, requestSchemaContent, "Jumpstarter");
+      registered = api.registerContributor(
+        SCHEMA_URI_SCHEME,
+        requestSchema,
+        requestSchemaContent,
+        "Jumpstarter",
+      );
       if (registered) {
         deps.output.appendLine("[schemas] Registered Jumpstarter YAML schema association.");
       }
