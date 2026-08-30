@@ -186,7 +186,10 @@ function unavailableLabel(availability: JmpAvailability): string {
 // Registration
 // ---------------------------------------------------------------------------
 
-export function registerClients(context: vscode.ExtensionContext, services: Services): void {
+export function registerClients(
+  context: vscode.ExtensionContext,
+  services: Services,
+): vscode.TreeDataProvider<unknown> {
   const provider = new ClientsTreeProvider(services);
   const treeView = vscode.window.createTreeView("jumpstarter.clients", {
     treeDataProvider: provider,
@@ -439,6 +442,8 @@ export function registerClients(context: vscode.ExtensionContext, services: Serv
       }
     }),
   );
+
+  return provider;
 }
 
 // ---------------------------------------------------------------------------

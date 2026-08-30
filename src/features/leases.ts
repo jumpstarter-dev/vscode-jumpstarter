@@ -31,7 +31,10 @@ const COUNTDOWN_TICK_MS = 10_000;
 const SETTLE_TIMEOUT_MS = 30_000;
 const SETTLE_POLL_MS = 1_000;
 
-export function registerLeases(context: vscode.ExtensionContext, services: Services): void {
+export function registerLeases(
+  context: vscode.ExtensionContext,
+  services: Services,
+): vscode.TreeDataProvider<unknown> {
   const { jmp } = services;
   const provider = new LeasesTreeProvider(jmp, services.pendingLeases);
   context.subscriptions.push(provider);
@@ -526,4 +529,6 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
       },
     ),
   );
+
+  return provider;
 }

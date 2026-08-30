@@ -525,7 +525,10 @@ async function buildSelectorInteractively(
 // Registration
 // ---------------------------------------------------------------------------
 
-export function registerExporters(context: vscode.ExtensionContext, services: Services): void {
+export function registerExporters(
+  context: vscode.ExtensionContext,
+  services: Services,
+): vscode.TreeDataProvider<unknown> {
   const provider = new ExportersTreeProvider(services);
   context.subscriptions.push(provider);
 
@@ -898,4 +901,6 @@ export function registerExporters(context: vscode.ExtensionContext, services: Se
       },
     ),
   );
+
+  return provider;
 }

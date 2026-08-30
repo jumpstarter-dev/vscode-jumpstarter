@@ -289,8 +289,50 @@ the watch build.
 
 Logic that can be unit-tested lives beside its feature in a `vscode`-free
 module (`src/features/<name>/*.ts`), because `pnpm run test:unit` runs the
-compiled output under plain Node. `pnpm test` drives a real VS Code instance
-and needs a display.
+compiled output under plain Node.
+
+### End-to-end tests
+
+`pnpm test` launches a real VS Code, activates the extension in it, and drives
+the actual commands and views. It needs a display; on a headless machine run it
+under `xvfb-run -a pnpm test`.
+
+The tests are hermetic — no cluster, no controller, not even Python — because
+the extension reaches the outside world through exactly one channel: it spawns
+`jmp` and parses stdout. `src/test/fixtures/fake-jmp.mjs` replaces that one
+binary with a script that answers each subcommand with known data, so
+everything above it runs for real. The harness points `jumpstarter.jmpPath` at
+it during activation.
+
+Two things make the fake useful as a test double:
+
+- every invocation is appended to `$JMP_FAKE_LOG`, so a test can assert what
+  the extension actually asked the CLI to do (`expectCall("admin", "apply")`);
+- `$JMP_FAKE_FAIL="admin get"` makes the matching subcommand exit non-zero, so
+  error handling is as easy to test as the happy path.
+
+An invocation the fake does not recognize exits 2, so a test that drifts from
+the real argv fails loudly instead of silently passing.
+
+`src/test/integration/harness.ts` has the rest: `activateWithFakeCli()`,
+`treeLabels()` / `childLabels()` / `findItem()` for asserting on what a view
+renders, `waitFor()` for the asynchronous parts, and `stubUi()` to answer
+QuickPicks, input boxes and notification buttons so an interactive command can
+be driven end to end:
+
+```ts
+const restore = stubUi({ quickPicks: ["fake", "Allow none for now"] });
+try {
+  await vscode.commands.executeCommand("jumpstarter.importClientConfig");
+} finally {
+  restore();
+}
+expectCall("admin", "import", "client", "fake");
+```
+
+Views are reachable because `activate()` returns the tree providers (see
+`JumpstarterApi` in `src/extension.ts`); that API exists for these tests and
+has no other consumer.
 
 ### Testing against local hardware-free exporters
 

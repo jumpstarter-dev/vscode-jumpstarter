@@ -14,7 +14,23 @@ import { registerSchemas } from "./features/schemas";
 import { registerAdmin, resolveAdminOptions } from "./features/admin";
 import { registerManifests } from "./features/manifests";
 
-export function activate(context: vscode.ExtensionContext): void {
+/**
+ * What activate() resolves to.
+ *
+ * This exists for the integration tests: a TreeDataProvider is otherwise
+ * unreachable from outside the module that registered it, and asserting on
+ * what a view actually renders is the whole point of those tests. Nothing in
+ * the extension consumes this.
+ */
+export interface JumpstarterApi {
+  services: Services;
+  /** The tree providers behind the four views, by view name. */
+  trees: Record<"clients" | "exporters" | "leases" | "admin", vscode.TreeDataProvider<unknown>>;
+  /** Re-read every view from the CLI and settle. */
+  refreshAll(): Promise<void>;
+}
+
+export function activate(context: vscode.ExtensionContext): JumpstarterApi {
   const output = vscode.window.createOutputChannel("Jumpstarter");
   context.subscriptions.push(output);
 
@@ -66,15 +82,15 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // FEATURE REGISTRATION: clients (tree view jumpstarter.clients, auth flows,
   // add-client wizard, status bar quick pick)
-  registerClients(context, services);
+  const clientsTree = registerClients(context, services);
 
   // FEATURE REGISTRATION: exporters (tree view jumpstarter.exporters, lease
   // acquisition by exporter or label selector)
-  registerExporters(context, services);
+  const exportersTree = registerExporters(context, services);
 
   // FEATURE REGISTRATION: leases (tree view jumpstarter.leases, device tree,
   // shell / run-in-lease terminals, extend/end lease)
-  registerLeases(context, services);
+  const leasesTree = registerLeases(context, services);
 
   // FEATURE REGISTRATION: testing (pin a lease for test runs via JMP_LEASE)
   registerTesting(context, services);
@@ -88,7 +104,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // FEATURE REGISTRATION: admin (tree view jumpstarter.admin — every client,
   // exporter, set and lease in a namespace; hidden without a usable kubeconfig)
-  registerAdmin(context, services);
+  const adminTree = registerAdmin(context, services);
 
   // Resolve the Python interpreter, hook environment-change events and run
   // the initial `jmp version` probe (fires onDidChangeAvailability). NOT
@@ -96,6 +112,26 @@ export function activate(context: vscode.ExtensionContext): void {
   // commands and views must exist immediately, and every feature re-renders
   // on onDidChangeAvailability once the probe completes.
   void jmp.initialize();
+
+  return {
+    services,
+    trees: {
+      clients: clientsTree,
+      exporters: exportersTree,
+      leases: leasesTree,
+      admin: adminTree,
+    },
+    refreshAll: async () => {
+      for (const command of [
+        "jumpstarter.clients.refresh",
+        "jumpstarter.exporters.refresh",
+        "jumpstarter.leases.refresh",
+        "jumpstarter.admin.refresh",
+      ]) {
+        await vscode.commands.executeCommand(command);
+      }
+    },
+  };
 }
 
 export function deactivate(): void {}

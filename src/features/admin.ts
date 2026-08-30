@@ -462,7 +462,10 @@ export async function resolveAdminOptions(
   return options;
 }
 
-export function registerAdmin(context: vscode.ExtensionContext, services: Services): void {
+export function registerAdmin(
+  context: vscode.ExtensionContext,
+  services: Services,
+): vscode.TreeDataProvider<unknown> {
   const options = (clients?: ClientConfigList | null) => resolveAdminOptions(services, clients);
   const provider = new AdminTreeProvider(services, options);
   context.subscriptions.push(provider);
@@ -573,4 +576,6 @@ export function registerAdmin(context: vscode.ExtensionContext, services: Servic
       },
     ),
   );
+
+  return provider;
 }
