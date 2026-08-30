@@ -89,13 +89,28 @@ export function namespacedDefs(driver: DriverSchema): Record<string, JsonSchema>
  * `additionalProperties` stays open: a driver whose keys could only be
  * recovered from its dataclass may be described incompletely, and rejecting
  * unknown keys there would flag valid configs.
+ *
+ * `required` is deliberately not emitted. The YAML language server answers a
+ * schema with unmet required keys by adding a "fill in the whole object"
+ * snippet to the completion list, which crowds out the keys themselves; the
+ * requirement is carried in each key's documentation instead.
  */
 export function configSchemaFor(driver: DriverSchema): JsonSchema {
   const prefix = defsPrefixFor(driver);
+  const required = new Set(driver.required ?? []);
+  const properties = namespaceRefs(clone(driver.properties ?? {}), prefix) as Record<
+    string,
+    JsonSchema
+  >;
+  for (const [name, property] of Object.entries(properties)) {
+    if (required.has(name)) {
+      const existing = typeof property.description === "string" ? `\n\n${property.description}` : "";
+      property.markdownDescription = `**Required.**${existing}`;
+    }
+  }
   return {
     type: "object",
-    properties: namespaceRefs(clone(driver.properties ?? {}), prefix) as JsonSchema,
-    ...(driver.required && driver.required.length > 0 ? { required: [...driver.required] } : {}),
+    properties,
     additionalProperties: true,
   };
 }
