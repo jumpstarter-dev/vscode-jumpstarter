@@ -6,6 +6,7 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import {
+  adminLeaseStatus,
   clientRow,
   describeLabels,
   exporterRow,
@@ -13,10 +14,13 @@ import {
   importedClientNames,
   isLeaseActive,
   leaseRow,
+  memberLabels,
+  normalizeAdminExporterStatus,
   pickAdminNamespace,
   sortByName,
   sortLeases,
 } from "../../features/admin/model";
+import { iconForCategory } from "../../features/exporters/model";
 import { AdminExporter, AdminLease, ClientConfigList } from "../../types";
 
 const clients: ClientConfigList = {
@@ -61,35 +65,64 @@ test("describeLabels trims a long label set instead of filling the row", () => {
   );
 });
 
-test("a client without credentials is called out rather than shown as ready", () => {
+test("a client waiting on credentials keeps its icon and changes colour", () => {
   const pending = clientRow({ metadata: { name: "new", namespace: "lab" }, status: null });
   assert.equal(pending.description, "no credential yet");
-  assert.equal(pending.icon.id, "circle-outline");
+  assert.deepEqual(pending.icon, { id: "account", colorId: "charts.yellow" });
 
   const ready = clientRow({
     metadata: { name: "belt", namespace: "lab" },
     status: { endpoint: "grpc.example:443", credential: { name: "belt-client" } },
   });
   assert.equal(ready.description, "grpc.example:443");
-  assert.equal(ready.icon.id, "account");
+  assert.deepEqual(ready.icon, { id: "account", colorId: "charts.blue" });
 });
 
-test("an exporter with no devices reads as registered but not running", () => {
-  const idle: AdminExporter = {
+test("an exporter carries the same status icon the Exporters view gives it", () => {
+  const base: AdminExporter = {
     metadata: { name: "bench", namespace: "lab", labels: { board: "qemu" } },
     status: { credential: { name: "bench-exporter" }, devices: [] },
   };
-  const row = exporterRow(idle);
-  assert.equal(row.description, "board=qemu");
-  assert.equal(row.icon.id, "vm-outline");
-  assert.match(row.tooltipMarkdown, /No devices reported/);
 
-  const running = exporterRow({
-    ...idle,
-    status: { ...idle.status, devices: [{ uuid: "a", labels: {} }] },
+  // No status reported at all: the exporter has never checked in.
+  const silent = exporterRow(base);
+  assert.equal(silent.description, "board=qemu");
+  assert.deepEqual(silent.icon, iconForCategory("unknown"));
+  assert.match(silent.tooltipMarkdown, /No devices reported/);
+
+  const available = exporterRow({
+    ...base,
+    status: { ...base.status, exporterStatus: "Available", devices: [{ uuid: "a", labels: {} }] },
   });
-  assert.equal(running.description, "board=qemu · 1 device");
-  assert.equal(running.icon.id, "vm-active");
+  assert.equal(available.description, "board=qemu · 1 device");
+  assert.deepEqual(available.icon, iconForCategory("available"));
+
+  const leased = exporterRow({ ...base, status: { ...base.status, exporterStatus: "LeaseReady" } });
+  assert.deepEqual(leased.icon, iconForCategory("leased"));
+
+  const offline = exporterRow({ ...base, status: { ...base.status, exporterStatus: "Offline" } });
+  assert.deepEqual(offline.icon, iconForCategory("offline"));
+});
+
+test("the cluster's PascalCase status maps onto the wire status", () => {
+  assert.equal(normalizeAdminExporterStatus("Available"), "AVAILABLE");
+  assert.equal(normalizeAdminExporterStatus("LeaseReady"), "LEASE_READY");
+  assert.equal(normalizeAdminExporterStatus("BeforeLeaseHookFailed"), "BEFORE_LEASE_HOOK_FAILED");
+  assert.equal(normalizeAdminExporterStatus(null), null);
+  assert.equal(normalizeAdminExporterStatus(""), null);
+  assert.equal(normalizeAdminExporterStatus("SomethingNewer"), null);
+});
+
+test("pool members drop the membership labels their pool row already states", () => {
+  assert.deepEqual(
+    memberLabels({
+      board: "qemu",
+      "exporterset.jumpstarter.dev/name": "pool",
+      "exporterset.jumpstarter.dev/provisioner": "qemu.jumpstarter.dev",
+    }),
+    { board: "qemu" },
+  );
+  assert.deepEqual(memberLabels(null), {});
 });
 
 const lease = (name: string, over: Partial<AdminLease> = {}): AdminLease => ({
@@ -110,13 +143,25 @@ test("a lease row leads with the exporter it holds", () => {
   const row = leaseRow(lease("01a0"));
   assert.equal(row.label, "belt-qemu-1");
   assert.equal(row.description, "belt · 1h");
-  assert.equal(row.icon.id, "circle-filled");
+  // The same icon the Leases view uses for an in-use lease.
+  assert.deepEqual(row.icon, { id: "lock", colorId: "charts.green" });
 });
 
 test("an unbound lease falls back to what it is asking for", () => {
   const row = leaseRow(lease("01a0", { status: { ended: false } }));
   assert.equal(row.label, "board=qemu");
   assert.match(row.tooltipMarkdown, /Not bound to an exporter yet/);
+  assert.deepEqual(row.icon, { id: "unlock", colorId: "charts.blue" });
+});
+
+test("an admin lease is classified the way the Leases view would", () => {
+  assert.equal(adminLeaseStatus(lease("a")), "In-Use");
+  assert.equal(adminLeaseStatus(lease("b", { status: { ended: false } })), "Waiting");
+  assert.equal(adminLeaseStatus(lease("c", { status: { ended: true } })), "Ended");
+  assert.deepEqual(leaseRow(lease("d", { status: { ended: true } })).icon, {
+    id: "unlock",
+    colorId: "disabledForeground",
+  });
 });
 
 test("leases sort active first, then newest", () => {

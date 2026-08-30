@@ -11,6 +11,7 @@ import { JmpService } from "./jmpService";
 import { ConfigWatcher } from "./configWatcher";
 import { StatusBarManager } from "./statusBar";
 import { Poller, PollerOptions } from "./poller";
+import { PendingLeaseStore } from "./pendingLeases";
 
 export { JmpService, JmpError, JmpErrorKind, JmpCapabilities } from "./jmpService";
 export type {
@@ -24,6 +25,8 @@ export { ConfigWatcher } from "./configWatcher";
 export { StatusBarManager } from "./statusBar";
 export { Poller, configuredPollIntervalSeconds } from "./poller";
 export type { PollerOptions } from "./poller";
+export { PendingLeaseStore, describePending } from "./pendingLeases";
+export type { PendingLease } from "./pendingLeases";
 
 export interface Services {
   /** The CLI bridge — every jmp call goes through this. */
@@ -44,6 +47,11 @@ export interface Services {
   onDidChangeLeases: vscode.Event<void>;
   /** Announce a lease change; see onDidChangeLeases. */
   notifyLeasesChanged(): void;
+  /**
+   * Lease requests that are still in flight, so the lease views can show one
+   * before the controller has bound an exporter to it.
+   */
+  pendingLeases: PendingLeaseStore;
   /**
    * Create a Poller owned by the calling feature. The feature must push the
    * returned poller onto context.subscriptions (it is a Disposable) and call

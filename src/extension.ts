@@ -3,7 +3,8 @@ import { JmpService } from "./services/jmpService";
 import { ConfigWatcher } from "./services/configWatcher";
 import { StatusBarManager } from "./services/statusBar";
 import { Poller, PollerOptions } from "./services/poller";
-import { Services } from "./services";
+import { PendingLeaseStore, Services } from "./services";
+import { initIconAssets } from "./features/icons";
 import { registerDetails } from "./features/details";
 import { registerClients } from "./features/clients";
 import { registerExporters } from "./features/exporters";
@@ -17,13 +18,17 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Jumpstarter");
   context.subscriptions.push(output);
 
+  // Where the bundled state icons live; must run before any tree renders.
+  initIconAssets(context.extensionUri);
+
   const jmp = new JmpService(output);
   const configWatcher = new ConfigWatcher();
   const statusBar = new StatusBarManager(jmp);
   context.subscriptions.push(jmp, configWatcher, statusBar);
 
   const leaseChangeEmitter = new vscode.EventEmitter<void>();
-  context.subscriptions.push(leaseChangeEmitter);
+  const pendingLeases = new PendingLeaseStore();
+  context.subscriptions.push(leaseChangeEmitter, pendingLeases);
 
   const services: Services = {
     jmp,
@@ -32,6 +37,7 @@ export function activate(context: vscode.ExtensionContext): void {
     output,
     onDidChangeLeases: leaseChangeEmitter.event,
     notifyLeasesChanged: () => leaseChangeEmitter.fire(),
+    pendingLeases,
     createPoller: (options: PollerOptions) => new Poller(options),
   };
 

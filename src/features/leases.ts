@@ -33,8 +33,11 @@ const SETTLE_POLL_MS = 1_000;
 
 export function registerLeases(context: vscode.ExtensionContext, services: Services): void {
   const { jmp } = services;
-  const provider = new LeasesTreeProvider(jmp);
+  const provider = new LeasesTreeProvider(jmp, services.pendingLeases);
   context.subscriptions.push(provider);
+  // A request going out or settling changes what this view shows right now,
+  // without waiting for the next poll.
+  context.subscriptions.push(services.pendingLeases.onDidChange(() => provider.refresh()));
 
   const treeView = vscode.window.createTreeView("jumpstarter.leases", {
     treeDataProvider: provider,

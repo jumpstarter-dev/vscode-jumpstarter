@@ -125,16 +125,26 @@ function statusFlag(status: LeaseStatus): string {
   }
 }
 
-function statusIcon(status: LeaseStatus): { icon: string; color: string | undefined } {
+/**
+ * Codicon and color for a lease status.
+ *
+ * A lease is a hold on an exporter, so it is drawn as a lock: closed while the
+ * hold is yours, open before and after. Exported so the Administration view
+ * draws a lease the way this view does — the same fact should not have two
+ * icons depending on where you look at it.
+ */
+export function leaseStatusIcon(status: LeaseStatus): { icon: string; color: string | undefined } {
   switch (status) {
     case "In-Use":
-      return { icon: "vm-running", color: "charts.green" };
+      return { icon: "lock", color: "charts.green" };
     case "Waiting":
-      return { icon: "clock", color: "charts.yellow" };
+      // Requested, not yet granted: the lock is not closed yet. Blue is the
+      // pending colour throughout, matching a lease still being acquired.
+      return { icon: "unlock", color: "charts.blue" };
     case "Expired":
-      return { icon: "warning", color: "charts.orange" };
+      return { icon: "lock", color: "charts.orange" };
     case "Ended":
-      return { icon: "circle-slash", color: "disabledForeground" };
+      return { icon: "unlock", color: "disabledForeground" };
     default:
       return { icon: "question", color: undefined };
   }
@@ -153,7 +163,7 @@ export function buildLeaseRow(lease: Lease, now: Date = new Date()): LeaseRowDes
     parts.push(remaining);
   }
 
-  const { icon, color } = statusIcon(lease.status);
+  const { icon, color } = leaseStatusIcon(lease.status);
   const tooltipLines = [
     lease.name,
     `Exporter: ${lease.exporter_name || lease.selector || "(selector)"}`,

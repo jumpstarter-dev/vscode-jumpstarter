@@ -83,23 +83,33 @@ test("categorizeExporter: offline overrides AVAILABLE and UNSPECIFIED", () => {
   assert.equal(categorizeExporter("UNSPECIFIED", false), "offline");
 });
 
-test("iconForCategory: colors match the spec", () => {
+test("iconForCategory: a working exporter is the machine, a broken one is its state", () => {
+  // Doing its job: the machine, checked when free and plugged in when held.
   assert.deepEqual(iconForCategory("available"), {
-    id: "pass",
+    id: "vm-active",
     colorId: "charts.green",
   });
   assert.deepEqual(iconForCategory("leased"), {
-    id: "pass-filled",
-    colorId: "charts.green",
+    id: "vm-connect",
+    colorId: "charts.blue",
   });
+  // Not: the state, in red or grey.
   assert.deepEqual(iconForCategory("failed"), {
-    id: "error",
+    id: "warning",
     colorId: "charts.red",
   });
-  assert.deepEqual(iconForCategory("offline"), {
-    id: "circle-slash",
-    colorId: "charts.red",
+  assert.deepEqual(iconForCategory("unknown"), {
+    id: "question",
+    colorId: "disabledForeground",
   });
+});
+
+test("iconForCategory: offline uses the bundled circle-x, which codicons lack", () => {
+  const offline = iconForCategory("offline");
+  assert.equal(offline.asset, "circle-x-red");
+  // The codicon stays as the fallback wherever only a ThemeIcon fits.
+  assert.equal(offline.id, "error");
+  assert.equal(offline.colorId, "charts.red");
 });
 
 // ---------------------------------------------------------------------------
@@ -225,7 +235,7 @@ test("buildExporterItemSpec: held exporter shows leaseholder", () => {
     makeExporter({ status: "LEASE_READY", lease: makeLease({ client: "alice" }) }),
   );
   assert.equal(spec.contextValue, "exporter-leased");
-  assert.equal(spec.icon.colorId, "charts.green");
+  assert.equal(spec.icon.colorId, "charts.blue");
   assert.ok(spec.description.startsWith("leased by alice"));
   assert.ok(spec.description.includes("board=rpi4"));
 });

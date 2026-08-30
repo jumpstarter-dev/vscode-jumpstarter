@@ -34,22 +34,27 @@ export function categorizeExporter(status: ExporterStatus | null, online: boolea
 
 /** Codicon id + theme color id for a status category. */
 export interface IconSpec {
-  /** Codicon name (without the $() wrapper). */
+  /** Codicon name (without the $() wrapper), used where only one can be. */
   id: string;
   /** vscode.ThemeColor id, or undefined for the default foreground. */
   colorId: string | undefined;
+  /**
+   * Base name of a bundled icon in media/icons, preferred over the codicon
+   * where a TreeItem can take a file (see features/icons.ts).
+   */
+  asset?: string;
 }
 
-// All circle-shaped so the column reads as one set of states at a glance, with
-// outline for a resting state and filled for one that wants attention:
-// outline check = free to lease, filled check = leased and ready to use,
-// outline slash = offline (codicons have no outline circle-x), filled x =
-// hook failure, question = the controller did not report a status.
+// An exporter that is doing its job is drawn as the machine it is — checked
+// when free, plugged in when held — and one that is not is drawn as the state
+// it is in: a red circle-x offline, a warning when a lease hook failed, a
+// question when the controller has told us nothing. `circle-x` is the one
+// glyph the codicon set lacks, so it ships in media/icons.
 const CATEGORY_ICONS: Record<ExporterCategory, IconSpec> = {
-  available: { id: "pass", colorId: "charts.green" },
-  leased: { id: "pass-filled", colorId: "charts.green" },
-  offline: { id: "circle-slash", colorId: "charts.red" },
-  failed: { id: "error", colorId: "charts.red" },
+  available: { id: "vm-active", colorId: "charts.green" },
+  leased: { id: "vm-connect", colorId: "charts.blue" },
+  offline: { id: "error", colorId: "charts.red", asset: "circle-x-red" },
+  failed: { id: "warning", colorId: "charts.red" },
   unknown: { id: "question", colorId: "disabledForeground" },
 };
 

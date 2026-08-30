@@ -12,14 +12,23 @@ import {
   AdminExporterSet,
   AdminLease,
   ClientConfigList,
+  ExporterStatus,
+  LeaseStatus,
 } from "../../types";
+import {
+  categorizeExporter,
+  EXPORTER_SET_LABEL_PREFIX,
+  iconForCategory,
+  IconSpec,
+} from "../exporters/model";
+import { leaseStatusIcon } from "../leases/model";
 
-/** How a row is drawn: icon id, optional theme color, text. */
+/** How a row is drawn: text plus the icon spec the renderer resolves. */
 export interface RowSpec {
   label: string;
   description?: string;
   tooltipMarkdown: string;
-  icon: { id: string; colorId?: string };
+  icon: IconSpec;
 }
 
 /**
@@ -45,6 +54,20 @@ function labelList(labels: Record<string, string> | null | undefined): string[] 
     .map(([key, value]) => `${key}=${value}`);
 }
 
+/**
+ * A pool member's labels minus the membership ones.
+ *
+ * The pool row the member sits under already says which set and provisioner it
+ * belongs to; repeating that on every member crowds out what differs.
+ */
+export function memberLabels(
+  labels: Record<string, string> | null | undefined,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(labels ?? {}).filter(([key]) => !key.startsWith(EXPORTER_SET_LABEL_PREFIX)),
+  );
+}
+
 /** Labels as a one-line description, trimmed to stay readable in a tree. */
 export function describeLabels(
   labels: Record<string, string> | null | undefined,
@@ -67,6 +90,33 @@ function labelsMarkdown(labels: Record<string, string> | null | undefined): stri
   return ["", "**Labels**", ...all.map((entry) => `- \`${entry}\``)];
 }
 
+/**
+ * Map the status the CRD stores to the one the controller reports over gRPC.
+ *
+ * They are the same enum spelled two ways — PascalCase in Kubernetes,
+ * SCREAMING_SNAKE on the wire — so translating lets an exporter carry the same
+ * icon here as in the Exporters view.
+ */
+export function normalizeAdminExporterStatus(value: string | null | undefined): ExporterStatus | null {
+  if (!value) {
+    return null;
+  }
+  const snake = value
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toUpperCase();
+  const known: ExporterStatus[] = [
+    "UNSPECIFIED",
+    "OFFLINE",
+    "AVAILABLE",
+    "BEFORE_LEASE_HOOK",
+    "LEASE_READY",
+    "AFTER_LEASE_HOOK",
+    "BEFORE_LEASE_HOOK_FAILED",
+    "AFTER_LEASE_HOOK_FAILED",
+  ];
+  return known.includes(snake as ExporterStatus) ? (snake as ExporterStatus) : null;
+}
+
 export function clientRow(client: AdminClient): RowSpec {
   const hasCredential = Boolean(client.status?.credential?.name);
   return {
@@ -84,15 +134,16 @@ export function clientRow(client: AdminClient): RowSpec {
     ]
       .filter((line) => line !== "")
       .join("\n\n"),
-    icon: hasCredential
-      ? { id: "account", colorId: "charts.blue" }
-      : { id: "circle-outline", colorId: "charts.yellow" },
+    // One icon for what the row is, colour for what state it is in: a client
+    // waiting on its credentials is still a client.
+    icon: { id: "account", colorId: hasCredential ? "charts.blue" : "charts.yellow" },
   };
 }
 
 export function exporterRow(exporter: AdminExporter): RowSpec {
   const devices = exporter.status?.devices?.length ?? 0;
   const registered = Boolean(exporter.status?.credential?.name);
+  const status = normalizeAdminExporterStatus(exporter.status?.exporterStatus);
   const description = [
     describeLabels(exporter.metadata.labels),
     devices > 0 ? `${devices} device${devices === 1 ? "" : "s"}` : undefined,
@@ -106,6 +157,9 @@ export function exporterRow(exporter: AdminExporter): RowSpec {
       `**${exporter.metadata.name}**`,
       "",
       `Namespace: \`${exporter.metadata.namespace}\``,
+      exporter.status?.statusMessage
+        ? `Status: ${exporter.status.statusMessage}`
+        : "Status: not reported by the controller.",
       registered
         ? `Credential: \`${exporter.status?.credential?.name}\``
         : "The controller has not issued credentials for this exporter yet.",
@@ -114,10 +168,11 @@ export function exporterRow(exporter: AdminExporter): RowSpec {
         : "No devices reported: nothing is running `jmp run` against this exporter.",
       ...labelsMarkdown(exporter.metadata.labels),
     ].join("\n\n"),
-    icon:
-      devices > 0
-        ? { id: "vm-active", colorId: "charts.green" }
-        : { id: "vm-outline", colorId: "charts.yellow" },
+    // The same status the Exporters view shows, so an exporter looks the same
+    // in both places. There is no separate online flag here: one that is
+    // offline says so in its status, and one that has never checked in has no
+    // status at all, which is unknown rather than offline.
+    icon: iconForCategory(categorizeExporter(status, true)),
   };
 }
 
@@ -126,11 +181,25 @@ export function isLeaseActive(lease: AdminLease): boolean {
   return lease.status?.ended !== true;
 }
 
+/**
+ * The status the Leases view would show for this lease.
+ *
+ * The admin listing has no derived status field, only the facts it is computed
+ * from: ended, and whether an exporter is bound yet.
+ */
+export function adminLeaseStatus(lease: AdminLease): LeaseStatus {
+  if (!isLeaseActive(lease)) {
+    return "Ended";
+  }
+  return lease.status?.exporter?.name ? "In-Use" : "Waiting";
+}
+
 export function leaseRow(lease: AdminLease): RowSpec {
   const active = isLeaseActive(lease);
   const client = lease.spec?.client?.name ?? "unknown client";
   const exporter = lease.status?.exporter?.name;
   const selector = describeLabels(lease.spec?.selector?.matchLabels);
+  const { icon, color } = leaseStatusIcon(adminLeaseStatus(lease));
   return {
     label: exporter ?? selector ?? lease.metadata.name,
     description: [client, lease.spec?.duration, active ? undefined : "ended"]
@@ -148,9 +217,8 @@ export function leaseRow(lease: AdminLease): RowSpec {
     ]
       .filter((line) => line !== "")
       .join("\n\n"),
-    icon: active
-      ? { id: "circle-filled", colorId: "charts.blue" }
-      : { id: "circle-outline", colorId: "descriptionForeground" },
+    // Drawn the way the Leases view draws the same status.
+    icon: { id: icon, colorId: color },
   };
 }
 

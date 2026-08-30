@@ -1,0 +1,13 @@
+<!--
+  An outline circle with an x: the one state glyph the codicon set is missing.
+  `error` is a filled circle and `circle-slash` is a bar, neither of which
+  reads as "offline" beside the outline circles VS Code uses for resting
+  states. Drawn to codicon geometry (16x16, 1px strokes on half-pixel
+  centres) so it sits beside real codicons without looking foreign, and in a
+  fixed red because an SVG icon cannot take a ThemeColor.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <circle cx="8" cy="8" r="6.5" fill="none" stroke="#F14C4C" stroke-width="1.1"/>
+  <path d="M5.9 5.9l4.2 4.2M10.1 5.9l-4.2 4.2" fill="none" stroke="#F14C4C" stroke-width="1.3"
+        stroke-linecap="round"/>
+</svg>

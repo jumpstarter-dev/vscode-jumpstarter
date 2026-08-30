@@ -14,7 +14,14 @@
  */
 
 import * as vscode from "vscode";
-import { AdminOptions, configuredPollIntervalSeconds, Poller, Services } from "../services";
+import {
+  AdminOptions,
+  configuredPollIntervalSeconds,
+  describePending,
+  PendingLease,
+  Poller,
+  Services,
+} from "../services";
 import {
   AdminClient,
   AdminExporter,
@@ -24,16 +31,20 @@ import {
 } from "../types";
 import {
   clientRow,
+  describeLabels,
   exporterRow,
   exporterSetRow,
   importedClientNames,
   isLeaseActive,
   leaseRow,
+  memberLabels,
   pickAdminNamespace,
   RowSpec,
   sortByName,
   sortLeases,
 } from "./admin/model";
+import { iconForCategory } from "./exporters/model";
+import { resolveIcon } from "./icons";
 import { importConfigFromCluster } from "./manifests";
 
 // ---------------------------------------------------------------------------
@@ -71,11 +82,19 @@ interface SetMemberNode {
   kind: "setMember";
   name: string;
   labels: Record<string, string>;
+  /** The member's own exporter object, when the namespace listing has it. */
+  exporter?: AdminExporter;
 }
 
 interface LeaseNode {
   kind: "lease";
   lease: AdminLease;
+}
+
+/** A lease this session has asked for that the cluster has not stored yet. */
+interface PendingLeaseNode {
+  kind: "pendingLease";
+  pending: PendingLease;
 }
 
 interface MessageNode {
@@ -93,6 +112,7 @@ type AdminNode =
   | ExporterSetNode
   | SetMemberNode
   | LeaseNode
+  | PendingLeaseNode
   | MessageNode;
 
 interface AdminData {
@@ -226,7 +246,9 @@ class AdminTreeProvider implements vscode.TreeDataProvider<AdminNode>, vscode.Di
           id: "leases",
           label: "Leases",
           count: leases.length,
-          iconId: "key",
+          // A lease is a held resource; `key` means authentication elsewhere
+          // in the extension and should not mean two things.
+          iconId: "lock",
         },
       ];
     }
@@ -234,12 +256,17 @@ class AdminTreeProvider implements vscode.TreeDataProvider<AdminNode>, vscode.Di
     switch (element.kind) {
       case "category":
         return this.categoryChildren(element.id, data);
-      case "exporterSet":
+      case "exporterSet": {
+        // Members are ordinary exporters, so pair each with the one from the
+        // namespace listing and it renders exactly as it does everywhere else.
+        const byName = new Map(data.exporters.map((e) => [e.metadata.name, e]));
         return (element.set.exporters ?? []).map((member) => ({
           kind: "setMember",
           name: member.name,
           labels: member.labels ?? {},
+          exporter: byName.get(member.name),
         }));
+      }
       default:
         return [];
     }
@@ -264,9 +291,17 @@ class AdminTreeProvider implements vscode.TreeDataProvider<AdminNode>, vscode.Di
         return data.sets.map((set) => ({ kind: "exporterSet", set }));
       case "leases": {
         const leases = this.visibleLeases(data);
-        return leases.length === 0
-          ? empty(this.showEndedLeases ? "No leases in this namespace" : "No active leases")
-          : leases.map((lease) => ({ kind: "lease", lease }));
+        // Requests this session has made but the cluster has not stored yet.
+        const pending: AdminNode[] = (this.services.pendingLeases?.all() ?? []).map((entry) => ({
+          kind: "pendingLease",
+          pending: entry,
+        }));
+        if (leases.length === 0) {
+          return pending.length > 0
+            ? pending
+            : empty(this.showEndedLeases ? "No leases in this namespace" : "No active leases");
+        }
+        return [...pending, ...leases.map((lease): AdminNode => ({ kind: "lease", lease }))];
       }
     }
   }
@@ -292,16 +327,37 @@ class AdminTreeProvider implements vscode.TreeDataProvider<AdminNode>, vscode.Di
       return item;
     }
 
+    if (node.kind === "pendingLease") {
+      const item = new vscode.TreeItem(node.pending.label, vscode.TreeItemCollapsibleState.None);
+      item.id = `admin/pending/${node.pending.id}`;
+      item.description = describePending(node.pending);
+      item.tooltip = new vscode.MarkdownString(
+        `**${node.pending.label}**\n\nRequested through \`${node.pending.client}\`; the controller has not granted it yet.`,
+      );
+      item.contextValue = "admin-lease-pending";
+      item.iconPath = new vscode.ThemeIcon("loading~spin", new vscode.ThemeColor("charts.blue"));
+      return item;
+    }
+
     if (node.kind === "setMember") {
-      const item = new vscode.TreeItem(node.name, vscode.TreeItemCollapsibleState.None);
+      const spec = node.exporter
+        ? exporterRow(node.exporter)
+        : {
+            label: node.name,
+            description: describeLabels(memberLabels(node.labels)),
+            tooltipMarkdown: `**${node.name}**\n\nProvisioned by this set; the namespace listing does not have it yet.`,
+            icon: iconForCategory("unknown"),
+          };
+      const item = new vscode.TreeItem(spec.label, vscode.TreeItemCollapsibleState.None);
       item.id = `admin/setMember/${node.name}`;
-      item.description = Object.entries(node.labels)
-        .filter(([key]) => !key.startsWith("exporterset.jumpstarter.dev/"))
-        .map(([key, value]) => `${key}=${value}`)
-        .slice(0, 2)
-        .join(" · ");
+      // The pool row above already says which set these belong to, so the
+      // membership labels are noise on every one of its members.
+      item.description = node.exporter
+        ? describeLabels(memberLabels(node.exporter.metadata.labels))
+        : spec.description;
+      item.tooltip = new vscode.MarkdownString(spec.tooltipMarkdown);
       item.contextValue = "admin-set-member";
-      item.iconPath = new vscode.ThemeIcon("vm", new vscode.ThemeColor("charts.purple"));
+      item.iconPath = resolveIcon(spec.icon);
       return item;
     }
 
@@ -313,10 +369,7 @@ class AdminTreeProvider implements vscode.TreeDataProvider<AdminNode>, vscode.Di
     tooltip.supportThemeIcons = true;
     item.tooltip = tooltip;
     item.contextValue = contextValue;
-    item.iconPath = new vscode.ThemeIcon(
-      spec.icon.id,
-      spec.icon.colorId ? new vscode.ThemeColor(spec.icon.colorId) : undefined,
-    );
+    item.iconPath = resolveIcon(spec.icon);
     return item;
   }
 

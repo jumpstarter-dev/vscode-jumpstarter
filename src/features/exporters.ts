@@ -15,6 +15,7 @@ import { JmpError, Services, Poller } from "../services";
 import { Exporter, ExporterConfigRef } from "../types";
 import { isValidAddress, redactSecretArgs, shellQuote } from "../services/jmpProtocol";
 import { showDetails } from "./details";
+import { resolveIcon } from "./icons";
 import { openConfigForEditing } from "./openConfig";
 import {
   buildExporterItemSpec,
@@ -409,10 +410,7 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
     // "-local" marks rows whose exporter YAML lives on this machine, so the
     // edit action can be offered only where there is a file to open.
     item.contextValue = node.configPath ? `${spec.contextValue}-local` : spec.contextValue;
-    item.iconPath = new vscode.ThemeIcon(
-      spec.icon.id,
-      spec.icon.colorId ? new vscode.ThemeColor(spec.icon.colorId) : undefined,
-    );
+    item.iconPath = resolveIcon(spec.icon);
     return item;
   }
 
@@ -639,6 +637,12 @@ export function registerExporters(context: vscode.ExtensionContext, services: Se
     duration: string,
   ): Promise<void> => {
     const target = opts.label ?? opts.exporterName ?? `selector '${opts.selector}'`;
+    // Show the request in the lease views for as long as it is outstanding:
+    // the lease does not exist yet, so nothing else would show it.
+    const pending = services.pendingLeases.begin(
+      client,
+      opts.label ?? opts.exporterName ?? opts.selector ?? "an exporter",
+    );
     try {
       // Progress shows in the Leases view: that is where the result appears,
       // and acquiring can take a while when a pool has to provision first.
@@ -664,6 +668,8 @@ export function registerExporters(context: vscode.ExtensionContext, services: Se
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       void vscode.window.showErrorMessage(`Jumpstarter: failed to create lease: ${message}`);
+    } finally {
+      services.pendingLeases.end(pending);
     }
   };
 

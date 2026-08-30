@@ -111,7 +111,7 @@ class ClientsTreeProvider implements vscode.TreeDataProvider<ClientNode> {
       return item;
     }
     const row = node.row;
-    const badge = authBadge(row.auth?.status);
+    const badge = authBadge(row.auth?.status, row.auth);
     const item = new vscode.TreeItem(row.alias, vscode.TreeItemCollapsibleState.None);
     item.id = `jumpstarter-client:${row.alias}`;
     item.description = rowDescription(row);
@@ -388,7 +388,7 @@ export function registerClients(context: vscode.ExtensionContext, services: Serv
       }
       if (needsReauth(row.auth?.status)) {
         const choice = await vscode.window.showWarningMessage(
-          `Client '${row.alias}' needs re-authentication (${authBadge(row.auth?.status).label}).`,
+          `Client '${row.alias}' needs re-authentication (${authBadge(row.auth?.status, row.auth).label}).`,
           "Re-authenticate",
           "Use Anyway",
         );

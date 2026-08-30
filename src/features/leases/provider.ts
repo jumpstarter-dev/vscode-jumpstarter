@@ -10,7 +10,7 @@
 
 import * as vscode from "vscode";
 import { Lease, LeaseDevices } from "../../types";
-import { JmpService, JmpError } from "../../services";
+import { describePending, JmpService, JmpError, PendingLease, PendingLeaseStore } from "../../services";
 import * as model from "./model";
 
 export interface MessageNode {
@@ -29,6 +29,12 @@ export interface LeaseNode {
   lease: Lease;
 }
 
+/** A lease this session has asked for and not been granted yet. */
+export interface PendingLeaseNode {
+  kind: "pending";
+  pending: PendingLease;
+}
+
 export interface DriverNode {
   kind: "driver";
   client: string;
@@ -43,7 +49,12 @@ export interface CommandNode {
   descriptor: model.CommandDescriptor;
 }
 
-export type LeaseTreeNode = MessageNode | LeaseNode | DriverNode | CommandNode;
+export type LeaseTreeNode =
+  | MessageNode
+  | LeaseNode
+  | PendingLeaseNode
+  | DriverNode
+  | CommandNode;
 
 type RootState =
   | { kind: "loading" }
@@ -66,7 +77,10 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
   private state: RootState = { kind: "loading" };
   private readonly devicesCache = new Map<string, DevicesCacheEntry>();
 
-  constructor(private readonly jmp: JmpService) {}
+  constructor(
+    private readonly jmp: JmpService,
+    private readonly pendingLeases?: PendingLeaseStore,
+  ) {}
 
   // -- state transitions (called by the feature's poller tick) --------------
 
@@ -159,6 +173,8 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
         return this.messageItem(node);
       case "lease":
         return this.leaseItem(node);
+      case "pending":
+        return this.pendingItem(node);
       case "driver":
         return this.driverItem(node);
       case "command":
@@ -226,10 +242,24 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
         ];
       case "data": {
         const { client, leases } = this.state;
+        // Requests still in flight sit at the top: they are the newest thing
+        // that happened, and they are what the user is waiting on.
+        const pending: LeaseTreeNode[] = (this.pendingLeases?.forClient(client) ?? []).map(
+          (entry) => ({ kind: "pending", pending: entry }),
+        );
         if (leases.length === 0) {
-          return [{ kind: "message", text: "No leases", icon: "info" }];
+          return pending.length > 0
+            ? pending
+            : [{ kind: "message", text: "No leases", icon: "info" }];
         }
-        return model.sortLeases(leases).map((lease) => ({ kind: "lease", client, lease }));
+        return [
+          ...pending,
+          ...model.sortLeases(leases).map((lease): LeaseTreeNode => ({
+            kind: "lease",
+            client,
+            lease,
+          })),
+        ];
       }
     }
   }
@@ -331,6 +361,25 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
     return item;
   }
 
+  private pendingItem(node: PendingLeaseNode): vscode.TreeItem {
+    const item = new vscode.TreeItem(node.pending.label, vscode.TreeItemCollapsibleState.None);
+    item.id = `jumpstarter.lease/${node.pending.id}`;
+    item.description = describePending(node.pending);
+    item.tooltip = new vscode.MarkdownString(
+      [
+        `**${node.pending.label}**`,
+        "",
+        "Waiting for the controller to grant this lease.",
+        "",
+        "A pool with nothing warm has to provision an exporter first, which can take a while.",
+      ].join("\n"),
+    );
+    // No actions: there is nothing to open or end until the lease exists.
+    item.contextValue = "jumpstarterLeasePending";
+    item.iconPath = new vscode.ThemeIcon("loading~spin", new vscode.ThemeColor("charts.blue"));
+    return item;
+  }
+
   private driverItem(node: DriverNode): vscode.TreeItem {
     const d = node.descriptor;
     const item = new vscode.TreeItem(
@@ -360,6 +409,11 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
       arguments: [node],
     };
     return item;
+  }
+
+  /** Re-render from the state already held (no CLI call). */
+  refresh(): void {
+    this.changeEmitter.fire(undefined);
   }
 
   dispose(): void {

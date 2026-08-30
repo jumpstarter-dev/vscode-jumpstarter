@@ -114,6 +114,26 @@ test("authBadge: severity mapping", () => {
   assert.equal(authBadge(undefined).severity, "unknown");
 });
 
+test("authBadge: the icon says how the client authenticates", () => {
+  // An issuer or a stored refresh token means the browser login flow.
+  assert.equal(authBadge("valid", makeAuth("valid", { issuer: "https://sso" })).icon, "globe");
+  assert.equal(authBadge("valid", makeAuth("valid", { refreshTokenStored: true })).icon, "globe");
+  // Otherwise it is holding a token the cluster issued.
+  assert.equal(authBadge("valid", makeAuth("valid")).icon, "key");
+  assert.equal(authBadge("expired", makeAuth("expired")).icon, "key");
+  // Nothing to authenticate with, or nothing known: a plain identity.
+  assert.equal(authBadge("no-token", makeAuth("no-token")).icon, "account");
+  assert.equal(authBadge(undefined).icon, "account");
+});
+
+test("authBadge: the colour says whether it is working", () => {
+  const auth = makeAuth("valid");
+  assert.equal(authBadge("valid", auth).color, "charts.green");
+  assert.equal(authBadge("expiring-soon", auth).color, "charts.yellow");
+  assert.equal(authBadge("expired", auth).color, "charts.red");
+  assert.equal(authBadge(undefined).color, undefined);
+});
+
 test("needsReauth: only expired/no-token/invalid-token", () => {
   assert.equal(needsReauth("expired"), true);
   assert.equal(needsReauth("no-token"), true);
@@ -301,10 +321,12 @@ test("buildClientPickEntries: badges in labels, state in description", () => {
     makeRow({ alias: "good", isCurrent: true, auth: makeAuth("valid") }),
     makeRow({ alias: "stale", auth: makeAuth("expired"), endpoint: "" }),
   ]);
+  // The icon says how the client authenticates; its state is in the colour
+  // (in the tree) and the description (here), so it does not change with it.
   assert.equal(entries[0].label, "$(key) good");
   assert.equal(entries[0].description, "current");
   assert.equal(entries[0].detail, "grpc.beta.example.com:443");
-  assert.equal(entries[1].label, "$(error) stale");
+  assert.equal(entries[1].label, "$(key) stale");
   assert.equal(entries[1].description, "token expired");
   assert.equal(entries[1].detail, undefined);
 });

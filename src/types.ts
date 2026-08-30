@@ -162,6 +162,13 @@ export interface AdminExporter {
     endpoint?: string;
     credential?: AdminNameRef | null;
     devices?: AdminExporterDevice[] | null;
+    /**
+     * The operational status the exporter last reported, PascalCase as the
+     * CRD stores it ("Available", "LeaseReady", ...) rather than the
+     * SCREAMING_SNAKE the controller sends clients over gRPC.
+     */
+    exporterStatus?: string | null;
+    statusMessage?: string | null;
   } | null;
 }
 

@@ -66,27 +66,52 @@ export interface AuthBadge {
   severity: AuthSeverity;
 }
 
-/** Map an auth status (undefined = could not be determined) to a badge. */
-export function authBadge(status: AuthStatusValue | undefined): AuthBadge {
+/**
+ * How the client proves who it is, which is what its icon says.
+ *
+ * A client that logs in against an issuer gets the globe; one holding a token
+ * the cluster issued gets the key; one we have learned nothing about is just
+ * an identity.
+ */
+export function authKindIcon(auth: AuthStatus | undefined): string {
+  if (auth?.issuer || auth?.refreshTokenStored) {
+    return "globe";
+  }
+  if (auth && auth.status !== "no-token") {
+    return "key";
+  }
+  return "account";
+}
+
+/**
+ * Map an auth status (undefined = could not be determined) to a badge.
+ *
+ * The icon says how the client authenticates and the colour says whether that
+ * is working, so a row keeps its identity as its state changes. Pass the full
+ * status when there is one; without it the icon is the generic identity.
+ */
+export function authBadge(status: AuthStatusValue | undefined, auth?: AuthStatus): AuthBadge {
+  const icon = authKindIcon(auth);
   switch (status) {
     case "valid":
     case "no-expiry":
-      return { icon: "key", color: "charts.green", label: "auth valid", severity: "ok" };
+      return { icon, color: "charts.green", label: "auth valid", severity: "ok" };
     case "expiring-soon":
       return {
-        icon: "warning",
+        icon,
         color: "charts.yellow",
         label: "token expiring soon",
         severity: "warn",
       };
     case "expired":
-      return { icon: "error", color: "charts.red", label: "token expired", severity: "bad" };
+      return { icon, color: "charts.red", label: "token expired", severity: "bad" };
     case "no-token":
-      return { icon: "circle-slash", color: "charts.red", label: "not logged in", severity: "bad" };
+      // Nothing to authenticate with yet, so there is no method to show.
+      return { icon: "account", color: "charts.red", label: "not logged in", severity: "bad" };
     case "invalid-token":
-      return { icon: "error", color: "charts.red", label: "invalid token", severity: "bad" };
+      return { icon, color: "charts.red", label: "invalid token", severity: "bad" };
     default:
-      return { icon: "question", color: undefined, label: "auth unknown", severity: "unknown" };
+      return { icon, color: undefined, label: "auth unknown", severity: "unknown" };
   }
 }
 
@@ -97,7 +122,7 @@ export function needsReauth(status: AuthStatusValue | undefined): boolean {
 
 /** Gray description text next to the alias in the tree. */
 export function rowDescription(row: ClientRow): string {
-  const badge = authBadge(row.auth?.status);
+  const badge = authBadge(row.auth?.status, row.auth);
   const parts: string[] = [];
   if (row.isCurrent) {
     parts.push("current");
@@ -132,7 +157,7 @@ export function rowContextValue(row: ClientRow): string {
 
 /** Markdown lines for the row tooltip. Never includes token material. */
 export function rowTooltipLines(row: ClientRow): string[] {
-  const badge = authBadge(row.auth?.status);
+  const badge = authBadge(row.auth?.status, row.auth);
   const lines: string[] = [`**${row.alias}**${row.isCurrent ? " (current client)" : ""}`];
   if (row.endpoint) {
     lines.push(`Endpoint: ${row.endpoint}`);
@@ -283,7 +308,7 @@ export interface ClientPickEntry {
 
 export function buildClientPickEntries(rows: readonly ClientRow[]): ClientPickEntry[] {
   return rows.map((row) => {
-    const badge = authBadge(row.auth?.status);
+    const badge = authBadge(row.auth?.status, row.auth);
     return {
       alias: row.alias,
       label: `$(${badge.icon}) ${row.alias}`,
