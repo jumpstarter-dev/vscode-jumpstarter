@@ -226,6 +226,24 @@ export function normalizeExporter(exporter: Exporter): Exporter {
   return { ...exporter, status: normalizeExporterStatus(exporter.status) };
 }
 
+/** Shell-safe (POSIX) rendering of one argument. */
+function quoteArg(arg: string): string {
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(arg)) {
+    return arg;
+  }
+  return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Render an argv as a command line to type into a terminal.
+ *
+ * Used where the command must run inside a shell that outlives it, so its
+ * output stays on screen after it exits.
+ */
+export function shellQuote(argv: readonly string[]): string {
+  return argv.map(quoteArg).join(" ");
+}
+
 export function buildGetLeasesArgs(client: string, includeEnded = false): string[] {
   const args = ["get", "leases", "-o", "json", "--client", client];
   if (includeEnded) {

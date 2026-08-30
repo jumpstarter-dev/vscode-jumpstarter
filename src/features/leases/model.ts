@@ -271,7 +271,13 @@ export function collectCommands(node: CliTreeNode, basePath: string[]): CommandD
  */
 export function buildDriverNodes(devices: LeaseDevices): DriverNodeDescriptor[] {
   const root = devices.cli_tree;
-  return (devices.drivers ?? []).map((driver) => {
+  // The root composite is the session handle itself, not a device: it carries
+  // an empty driver_path and no commands of its own, so its children are shown
+  // directly under the lease.
+  const drivers = (devices.drivers ?? []).filter(
+    (driver) => (driver.driver_path ?? []).length > 0,
+  );
+  return drivers.map((driver) => {
     let cliPath: string[] = driver.driver_path ?? [];
     let cliNode = root ? findCliNode(root, cliPath) : undefined;
     if ((!cliNode || cliPath.length === 0) && driver.path) {

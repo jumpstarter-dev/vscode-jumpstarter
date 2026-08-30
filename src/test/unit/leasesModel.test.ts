@@ -254,6 +254,33 @@ test("buildDriverNodes: matches drivers to cli subtrees by driver_path", () => {
   );
 });
 
+test("buildDriverNodes: hides the root composite session handle", () => {
+  const devices: LeaseDevices = {
+    drivers: [
+      {
+        path: "client",
+        driver_path: [],
+        class: "jumpstarter_driver_composite.client.CompositeClient",
+        description: "",
+        methods: [],
+      },
+      {
+        path: "client.power",
+        driver_path: ["power"],
+        class: "jumpstarter_driver_power.client.PowerClient",
+        description: "",
+        methods: ["on"],
+      },
+    ],
+    cli_tree: cliGroup("j", { power: cliGroup("power", { on: cliLeaf("on") }) }),
+  };
+  const nodes = buildDriverNodes(devices);
+  assert.deepEqual(
+    nodes.map((n) => n.label),
+    ["power"],
+  );
+});
+
 test("buildDriverNodes: falls back to splitting the dotted path", () => {
   const devices: LeaseDevices = {
     drivers: [

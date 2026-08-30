@@ -20,8 +20,10 @@ import {
   extractWarnings,
   JmpError,
   parseGitVersion,
+  normalizeExporterStatus,
   parseJsonOutput,
   resolveConfigHome,
+  shellQuote,
   summarizeStderr,
 } from "../../services/jmpProtocol";
 import { leaseRemainingSeconds, Lease } from "../../types";
@@ -283,4 +285,20 @@ test("leaseRemainingSeconds can be negative for over-run leases", () => {
   const now = new Date("2026-01-01T01:00:00Z");
   const lease = makeLease({ effective_begin_time: "2026-01-01T00:00:00Z", duration: 1800 });
   assert.equal(leaseRemainingSeconds(lease, now), -1800);
+});
+
+test("shellQuote: leaves plain args bare and quotes the rest", () => {
+  assert.equal(shellQuote(["jmp", "shell", "--lease", "01a0-506e"]), "jmp shell --lease 01a0-506e");
+  assert.equal(shellQuote(["/usr/bin/python", "/a b/x.py"]), "/usr/bin/python '/a b/x.py'");
+  assert.equal(shellQuote(["echo", "it's"]), `echo 'it'\\''s'`);
+});
+
+test("normalizeExporterStatus: accepts names, ordinals, null and junk", () => {
+  assert.equal(normalizeExporterStatus("LEASE_READY"), "LEASE_READY");
+  assert.equal(normalizeExporterStatus(4), "LEASE_READY");
+  assert.equal(normalizeExporterStatus(2), "AVAILABLE");
+  assert.equal(normalizeExporterStatus(null), null);
+  assert.equal(normalizeExporterStatus(undefined), null);
+  assert.equal(normalizeExporterStatus("NOPE"), null);
+  assert.equal(normalizeExporterStatus(99), null);
 });

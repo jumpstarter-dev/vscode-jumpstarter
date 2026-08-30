@@ -14,6 +14,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { Services, JmpError } from "../services";
+import { shellQuote } from "../services/jmpProtocol";
 import { Lease } from "../types";
 import { showDetails } from "./details";
 import * as model from "./leases/model";
@@ -158,6 +159,32 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
   };
 
   /**
+   * Run a one-shot command in the lease by typing it into a normal terminal.
+   *
+   * Launching it as the terminal's own process would close the terminal the
+   * moment the command exits, taking its output with it; sending the line to
+   * a shell leaves the output on screen and the shell ready for another run.
+   */
+  const runInLeaseTerminal = async (
+    terminalName: string,
+    getShell: () => Promise<{ command: string; args: string[] }>,
+  ): Promise<void> => {
+    try {
+      const shell = await getShell();
+      const terminal = vscode.window.createTerminal({
+        name: terminalName,
+        env: await jmp.getTerminalEnv(),
+      });
+      terminal.show();
+      terminal.sendText(shellQuote([shell.command, ...shell.args]));
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `Jumpstarter: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
+
+  /**
    * Guard for user-initiated remote jmp calls (extend/release): an expired
    * token would otherwise send the no-TTY background process into an
    * interactive browser re-auth that hangs until the timeout. Returns true
@@ -232,7 +259,7 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
           return;
         }
         const filePath = editor.document.uri.fsPath;
-        await openLeaseTerminal(`jmp run ${path.basename(filePath)}`, () =>
+        await runInLeaseTerminal(`jmp run ${path.basename(filePath)}`, () =>
           jmp.getRunFileCommand(leaseNode.client, leaseNode.lease.name, filePath),
         );
       },
@@ -337,7 +364,7 @@ export function registerLeases(context: vscode.ExtensionContext, services: Servi
         if (!n || n.kind !== "command" || !n.descriptor) {
           return;
         }
-        await openLeaseTerminal(n.descriptor.label, () =>
+        await runInLeaseTerminal(n.descriptor.label, () =>
           jmp.getShellCommand(n.client, n.leaseName, ["j", ...n.descriptor.cliPath]),
         );
       },

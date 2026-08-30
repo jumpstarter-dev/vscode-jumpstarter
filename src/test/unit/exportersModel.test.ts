@@ -80,8 +80,8 @@ test("categorizeExporter: offline overrides AVAILABLE and UNSPECIFIED", () => {
 
 test("iconForCategory: colors match the spec", () => {
   assert.deepEqual(iconForCategory("available"), {
-    id: "circle-filled",
-    colorId: "charts.blue",
+    id: "pass",
+    colorId: "charts.green",
   });
   assert.deepEqual(iconForCategory("leased"), {
     id: "pass-filled",
@@ -208,7 +208,7 @@ test("buildExporterItemSpec: available exporter", () => {
   assert.equal(spec.label, "rpi4-01");
   assert.equal(spec.contextValue, "exporter-available");
   assert.equal(spec.category, "available");
-  assert.equal(spec.icon.colorId, "charts.blue");
+  assert.equal(spec.icon.colorId, "charts.green");
   assert.equal(spec.description, "board=rpi4, site=lab1");
 });
 
