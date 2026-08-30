@@ -17,6 +17,11 @@ import { showDetails } from "./details";
 import { openConfigForEditing } from "./openConfig";
 import {
   buildExporterItemSpec,
+  exporterSetDescription,
+  exporterSetSelector,
+  exporterSetTooltip,
+  ExporterSetGroup,
+  groupExporterSets,
   buildSelector,
   collectLabelKeys,
   collectLabelValues,
@@ -39,6 +44,11 @@ interface ExporterNode {
   configPath?: string;
 }
 
+interface ExporterSetNode {
+  kind: "exporterSet";
+  group: ExporterSetGroup;
+}
+
 interface MessageNode {
   kind: "message";
   label: string;
@@ -48,7 +58,7 @@ interface MessageNode {
   command?: vscode.Command;
 }
 
-type ExportersNode = ExporterNode | MessageNode;
+type ExportersNode = ExporterNode | ExporterSetNode | MessageNode;
 
 type ViewState =
   | { kind: "loading" }
@@ -170,7 +180,10 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
 
   getChildren(element?: ExportersNode): ExportersNode[] {
     if (element) {
-      return [];
+      // A pool expands into its members; nothing else has children.
+      return element.kind === "exporterSet"
+        ? element.group.exporters.map((exporter) => this.exporterNode(exporter))
+        : [];
     }
     switch (this.state.kind) {
       case "loading":
@@ -219,13 +232,22 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
               : `No exporters match filter '${this.filterRaw}'`;
           return [{ kind: "message", label, iconId: "info" }];
         }
-        return filtered.map((exporter) => ({
-          kind: "exporter",
-          exporter,
-          configPath: this.configPaths.get(exporter.name),
-        }));
+        const { sets, standalone } = groupExporterSets(filtered);
+        return [
+          ...sets.map((group): ExportersNode => ({ kind: "exporterSet", group })),
+          ...standalone.map((exporter): ExportersNode => this.exporterNode(exporter)),
+        ];
       }
     }
+  }
+
+  /** One exporter row, carrying its local config path when it has one. */
+  private exporterNode(exporter: Exporter): ExporterNode {
+    return {
+      kind: "exporter",
+      exporter,
+      configPath: this.configPaths.get(exporter.name),
+    };
   }
 
   getTreeItem(node: ExportersNode): vscode.TreeItem {
@@ -240,6 +262,23 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
       item.command = node.command;
       return item;
     }
+    if (node.kind === "exporterSet") {
+      const group = node.group;
+      const item = new vscode.TreeItem(
+        group.name,
+        vscode.TreeItemCollapsibleState.Collapsed,
+      );
+      item.id = `exporterset/${group.name}`;
+      item.description = exporterSetDescription(group);
+      const tooltip = new vscode.MarkdownString(exporterSetTooltip(group));
+      tooltip.supportThemeIcons = true;
+      item.tooltip = tooltip;
+      item.contextValue = "exporter-set";
+      // Stacked layers: this row stands for several exporters.
+      item.iconPath = new vscode.ThemeIcon("layers", new vscode.ThemeColor("charts.purple"));
+      return item;
+    }
+
     const spec = buildExporterItemSpec(node.exporter);
     const item = new vscode.TreeItem(spec.label, vscode.TreeItemCollapsibleState.None);
     item.id = spec.id;
@@ -267,11 +306,11 @@ class ExportersTreeProvider implements vscode.TreeDataProvider<ExportersNode>, v
 // ---------------------------------------------------------------------------
 
 /** Duration QuickPick: presets + custom input. Undefined on cancel. */
-async function pickDuration(): Promise<string | undefined> {
+async function pickDuration(title?: string): Promise<string | undefined> {
   const custom = "$(edit) Custom…";
   const picked = await vscode.window.showQuickPick(
     [...DURATION_PRESETS.map((d) => ({ label: d })), { label: custom }],
-    { placeHolder: "Lease duration" },
+    { title, placeHolder: "Lease duration" },
   );
   if (!picked) {
     return undefined;
@@ -487,6 +526,47 @@ export function registerExporters(context: vscode.ExtensionContext, services: Se
       poller.start();
       return poller.refreshNow();
     }),
+
+    // Lease any member of a pool: the selector matches every exporter the set
+    // owns, so the controller is free to pick one (and to provision another to
+    // refill the pool's warm buffer).
+    vscode.commands.registerCommand(
+      "jumpstarter.exporters.leaseFromSet",
+      async (node?: ExportersNode) => {
+        const group = node?.kind === "exporterSet" ? node.group : undefined;
+        if (!group) {
+          void vscode.window.showInformationMessage(
+            "Select an exporter set in the Jumpstarter Exporters view first.",
+          );
+          return;
+        }
+        const client = provider.activeClient;
+        if (!client) {
+          void vscode.window.showWarningMessage("Jumpstarter: no current client selected.");
+          return;
+        }
+        const duration = await pickDuration(`Lease from ${group.name}`);
+        if (!duration) {
+          return;
+        }
+        try {
+          const name = await services.jmp.createLease(client, {
+            selector: exporterSetSelector(group.name),
+            duration,
+          });
+          void vscode.window.showInformationMessage(
+            `Jumpstarter: leased ${name} from ${group.name}.`,
+          );
+          void poller.refreshNow();
+        } catch (err) {
+          void vscode.window.showErrorMessage(
+            `Jumpstarter: failed to lease from ${group.name}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      },
+    ),
 
     // Only offered on rows carrying a configPath (contextValue ends "-local").
     vscode.commands.registerCommand(

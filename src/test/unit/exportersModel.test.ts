@@ -17,6 +17,11 @@ import {
   filterExportersBySelector,
   formatDurationShort,
   formatLabels,
+  exporterSetDescription,
+  exporterSetName,
+  exporterSetSelector,
+  exporterSetTooltip,
+  groupExporterSets,
   iconForCategory,
   isValidDuration,
   parseSelector,
@@ -290,4 +295,103 @@ test("sortExporters: name-sorted copy, input untouched", () => {
     ["a", "b", "c"],
   );
   assert.equal(input[0].name, "b");
+});
+
+// ---------------------------------------------------------------------------
+// Exporter sets (pools)
+// ---------------------------------------------------------------------------
+
+function pooled(name: string, set = "qemu-pool", extra: Record<string, string> = {}): Exporter {
+  return makeExporter({
+    name,
+    labels: {
+      board: "qemu",
+      "exporterset.jumpstarter.dev/name": set,
+      "exporterset.jumpstarter.dev/class": "belt-qemu",
+      "exporterset.jumpstarter.dev/provisioner": "qemu.jumpstarter.dev",
+      ...extra,
+    },
+  });
+}
+
+test("exporterSetName: reads the controller's identity label", () => {
+  assert.equal(exporterSetName(pooled("qemu-pool-a")), "qemu-pool");
+  assert.equal(exporterSetName(makeExporter()), undefined);
+});
+
+test("groupExporterSets: pools group, standalone exporters stay out", () => {
+  const { sets, standalone } = groupExporterSets([
+    makeExporter({ name: "bench-rpi4" }),
+    pooled("qemu-pool-b"),
+    pooled("qemu-pool-a"),
+    pooled("orin-pool-a", "orin-pool"),
+  ]);
+
+  assert.deepEqual(
+    sets.map((group) => group.name),
+    ["orin-pool", "qemu-pool"],
+  );
+  // Members are sorted within their pool.
+  assert.deepEqual(
+    sets[1].exporters.map((e) => e.name),
+    ["qemu-pool-a", "qemu-pool-b"],
+  );
+  assert.deepEqual(
+    standalone.map((e) => e.name),
+    ["bench-rpi4"],
+  );
+});
+
+test("groupExporterSets: carries the class and provisioner from members", () => {
+  const { sets } = groupExporterSets([pooled("qemu-pool-a")]);
+  assert.equal(sets[0].className, "belt-qemu");
+  assert.equal(sets[0].provisioner, "qemu.jumpstarter.dev");
+});
+
+test("groupExporterSets: no pools yields no set rows", () => {
+  const { sets, standalone } = groupExporterSets([makeExporter()]);
+  assert.deepEqual(sets, []);
+  assert.equal(standalone.length, 1);
+});
+
+test("exporterSetSelector: selects every member of the pool and nothing else", () => {
+  assert.equal(
+    exporterSetSelector("qemu-pool"),
+    "exporterset.jumpstarter.dev/name=qemu-pool",
+  );
+});
+
+test("exporterSetDescription: counts members and calls out leased and offline", () => {
+  const { sets } = groupExporterSets([
+    pooled("qemu-pool-a"),
+    makeExporter({
+      name: "qemu-pool-b",
+      status: "LEASE_READY",
+      labels: { "exporterset.jumpstarter.dev/name": "qemu-pool" },
+      lease: makeLease({ client: "alice" }),
+    }),
+    makeExporter({
+      name: "qemu-pool-c",
+      status: "OFFLINE",
+      online: false,
+      labels: { "exporterset.jumpstarter.dev/name": "qemu-pool" },
+    }),
+  ]);
+  const description = exporterSetDescription(sets[0]);
+  assert.match(description, /3 exporters/);
+  assert.match(description, /1 leased/);
+  assert.match(description, /1 offline/);
+});
+
+test("exporterSetDescription: a single member reads in the singular", () => {
+  const { sets } = groupExporterSets([pooled("qemu-pool-a")]);
+  assert.match(exporterSetDescription(sets[0]), /^1 exporter · /);
+});
+
+test("exporterSetTooltip: says how to lease from the pool", () => {
+  const { sets } = groupExporterSets([pooled("qemu-pool-a")]);
+  const tooltip = exporterSetTooltip(sets[0]);
+  assert.match(tooltip, /Exporter set/);
+  assert.match(tooltip, /qemu\.jumpstarter\.dev/);
+  assert.match(tooltip, /exporterset\.jumpstarter\.dev\/name=qemu-pool/);
 });

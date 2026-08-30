@@ -129,6 +129,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "jumpstarter.exporters.leaseFromSet",
+        "title": "Lease from Exporter Set",
+        "category": "Jumpstarter",
+        "icon": "$(play)"
+      },
+      {
         "command": "jumpstarter.exporters.editConfig",
         "title": "Edit Exporter Config",
         "category": "Jumpstarter",
@@ -223,6 +229,10 @@
       "commandPalette": [
         {
           "command": "jumpstarter.exporters.editConfig",
+          "when": "false"
+        },
+        {
+          "command": "jumpstarter.exporters.leaseFromSet",
           "when": "false"
         },
         {
@@ -346,6 +356,16 @@
           "command": "jumpstarter.exporters.editConfig",
           "when": "view == jumpstarter.exporters && viewItem =~ /-local$/",
           "group": "inline@2"
+        },
+        {
+          "command": "jumpstarter.exporters.leaseFromSet",
+          "when": "view == jumpstarter.exporters && viewItem == exporter-set",
+          "group": "inline@1"
+        },
+        {
+          "command": "jumpstarter.exporters.leaseFromSet",
+          "when": "view == jumpstarter.exporters && viewItem == exporter-set",
+          "group": "1_actions@1"
         },
         {
           "command": "jumpstarter.exporters.acquireLease",

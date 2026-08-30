@@ -66,6 +66,23 @@ export function effectiveLabels(exporter: Exporter): Record<string, string> {
   return { ...exporter.deprecated_labels, ...exporter.labels };
 }
 
+/** Prefix of the labels the controller stamps to identify an exporter's pool. */
+export const EXPORTER_SET_LABEL_PREFIX = "exporterset.jumpstarter.dev/";
+
+/**
+ * Labels worth showing on a row: the operator's own, without the pool
+ * identity labels, which are structural and already shown by the pool row.
+ */
+export function displayLabels(exporter: Exporter): Record<string, string> {
+  const shown: Record<string, string> = {};
+  for (const [key, value] of Object.entries(effectiveLabels(exporter))) {
+    if (!key.startsWith(EXPORTER_SET_LABEL_PREFIX)) {
+      shown[key] = value;
+    }
+  }
+  return shown;
+}
+
 export function formatLabels(labels: Record<string, string>): string {
   return Object.keys(labels)
     .sort()
@@ -223,7 +240,7 @@ export function buildExporterTooltipMarkdown(exporter: Exporter, now: Date = new
       lines.push(`Time remaining: ${formatDurationShort(remaining)}`);
     }
   }
-  const labels = effectiveLabels(exporter);
+  const labels = displayLabels(exporter);
   const keys = Object.keys(labels).sort();
   if (keys.length > 0) {
     lines.push("");
@@ -244,7 +261,7 @@ export function buildExporterItemSpec(exporter: Exporter, now: Date = new Date()
   } else if (category !== "available") {
     parts.push((exporter.status ?? "unknown").toLowerCase().replace(/_/g, " "));
   }
-  const labelText = formatLabels(effectiveLabels(exporter));
+  const labelText = formatLabels(displayLabels(exporter));
   if (labelText.length > 0) {
     parts.push(labelText);
   }
@@ -264,4 +281,125 @@ export function sortExporters(exporters: readonly Exporter[]): Exporter[] {
   return [...exporters].sort((a, b) =>
     a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Exporter sets (pools)
+// ---------------------------------------------------------------------------
+
+/**
+ * Labels the controller stamps on every exporter an ExporterSet creates.
+ *
+ * Set membership otherwise lives only in Kubernetes ownerReferences, which the
+ * client API does not expose; these labels are what make a pool visible to a
+ * client with no cluster access.
+ */
+export const EXPORTER_SET_NAME_LABEL = "exporterset.jumpstarter.dev/name";
+export const EXPORTER_SET_CLASS_LABEL = "exporterset.jumpstarter.dev/class";
+export const EXPORTER_SET_PROVISIONER_LABEL = "exporterset.jumpstarter.dev/provisioner";
+
+export interface ExporterSetGroup {
+  /** ExporterSet name, e.g. "belt-qemu-pool". */
+  name: string;
+  /** VirtualTargetClass backing the pool, when the exporters report one. */
+  className: string | undefined;
+  /** Provisioner behind the pool, e.g. qemu.jumpstarter.dev. */
+  provisioner: string | undefined;
+  /** Members, sorted; may be empty for a pool currently scaled to zero. */
+  exporters: Exporter[];
+}
+
+/** The set an exporter belongs to, or undefined when it stands alone. */
+export function exporterSetName(exporter: Exporter): string | undefined {
+  const value = effectiveLabels(exporter)[EXPORTER_SET_NAME_LABEL];
+  return value && value.length > 0 ? value : undefined;
+}
+
+/**
+ * Split exporters into pools and standalone exporters.
+ *
+ * Pools come first and are sorted by name, as are the exporters within each;
+ * standalone exporters keep their own sorted order.
+ */
+export function groupExporterSets(exporters: readonly Exporter[]): {
+  sets: ExporterSetGroup[];
+  standalone: Exporter[];
+} {
+  const sets = new Map<string, ExporterSetGroup>();
+  const standalone: Exporter[] = [];
+
+  for (const exporter of exporters) {
+    const setName = exporterSetName(exporter);
+    if (setName === undefined) {
+      standalone.push(exporter);
+      continue;
+    }
+    const labels = effectiveLabels(exporter);
+    const group = sets.get(setName) ?? {
+      name: setName,
+      className: labels[EXPORTER_SET_CLASS_LABEL],
+      provisioner: labels[EXPORTER_SET_PROVISIONER_LABEL],
+      exporters: [],
+    };
+    group.exporters.push(exporter);
+    sets.set(setName, group);
+  }
+
+  const ordered = [...sets.values()].sort((a, b) => a.name.localeCompare(b.name));
+  for (const group of ordered) {
+    group.exporters = sortExporters(group.exporters);
+  }
+  return { sets: ordered, standalone: sortExporters(standalone) };
+}
+
+/**
+ * Selector for leasing from a pool.
+ *
+ * The identity label matches every exporter the set owns and nothing else, so
+ * it is the one selector that means "any member of this pool".
+ */
+export function exporterSetSelector(name: string): string {
+  return `${EXPORTER_SET_NAME_LABEL}=${name}`;
+}
+
+/** "3 exporters · 1 leased · qemu-class" for a pool row. */
+export function exporterSetDescription(group: ExporterSetGroup): string {
+  const parts: string[] = [];
+  const total = group.exporters.length;
+  parts.push(total === 1 ? "1 exporter" : `${total} exporters`);
+
+  const leased = group.exporters.filter(
+    (exporter) => categorizeExporter(exporter.status, exporter.online) === "leased",
+  ).length;
+  if (leased > 0) {
+    parts.push(`${leased} leased`);
+  }
+  const offline = group.exporters.filter(
+    (exporter) => categorizeExporter(exporter.status, exporter.online) === "offline",
+  ).length;
+  if (offline > 0) {
+    parts.push(`${offline} offline`);
+  }
+  if (group.provisioner) {
+    parts.push(group.provisioner);
+  } else if (group.className) {
+    parts.push(group.className);
+  }
+  return parts.join(" · ");
+}
+
+/** Markdown tooltip for a pool row. */
+export function exporterSetTooltip(group: ExporterSetGroup): string {
+  const lines = [`**${group.name}**`, "", "Exporter set (pool)"];
+  if (group.className) {
+    lines.push("", `Class: \`${group.className}\``);
+  }
+  if (group.provisioner) {
+    lines.push("", `Provisioner: \`${group.provisioner}\``);
+  }
+  lines.push(
+    "",
+    `Lease with selector \`${exporterSetSelector(group.name)}\` to take any member.`,
+  );
+  return lines.join("\n");
 }
