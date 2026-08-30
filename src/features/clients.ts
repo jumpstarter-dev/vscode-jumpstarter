@@ -22,6 +22,7 @@ import { AuthStatus } from "../types";
 import { showDetails } from "./details";
 import {
   authBadge,
+  clientRowIcon,
   buildClientCreateArgs,
   buildClientPickEntries,
   buildClientRows,
@@ -110,13 +111,13 @@ class ClientsTreeProvider implements vscode.TreeDataProvider<ClientNode> {
       return item;
     }
     const row = node.row;
-    const badge = authBadge(row.auth?.status);
+    const icon = clientRowIcon(row);
     const item = new vscode.TreeItem(row.alias, vscode.TreeItemCollapsibleState.None);
     item.id = `jumpstarter-client:${row.alias}`;
     item.description = rowDescription(row);
     item.iconPath = new vscode.ThemeIcon(
-      badge.icon,
-      badge.color ? new vscode.ThemeColor(badge.color) : undefined,
+      icon.icon,
+      icon.color ? new vscode.ThemeColor(icon.color) : undefined,
     );
     item.tooltip = new vscode.MarkdownString(rowTooltipLines(row).join("\n\n"));
     item.contextValue = rowContextValue(row);
