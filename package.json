@@ -93,15 +93,6 @@
         "icon": "$(star-empty)"
       },
       {
-        "command": "jumpstarter.currentClient",
-        "title": "Current Client",
-        "category": "Jumpstarter",
-        "icon": {
-          "light": "media/star-current-light.svg",
-          "dark": "media/star-current-dark.svg"
-        }
-      },
-      {
         "command": "jumpstarter.reauthenticateClient",
         "title": "Re-authenticate Client",
         "category": "Jumpstarter",
@@ -225,10 +216,6 @@
     "menus": {
       "commandPalette": [
         {
-          "command": "jumpstarter.currentClient",
-          "when": "false"
-        },
-        {
           "command": "jumpstarter.leases.openShell",
           "when": "false"
         },
@@ -305,11 +292,6 @@
         }
       ],
       "view/item/context": [
-        {
-          "command": "jumpstarter.currentClient",
-          "when": "view == jumpstarter.clients && viewItem =~ /Current/",
-          "group": "inline@1"
-        },
         {
           "command": "jumpstarter.useClient",
           "when": "view == jumpstarter.clients && viewItem =~ /^jumpstarterClient(NeedsAuth)?$/",
