@@ -3,13 +3,13 @@
  *
  * Root nodes are the leases of the active client (or a message node while
  * loading / when no client is selected / on auth expiry). In-Use leases
- * expand into a device tree fetched lazily via
- * `jmp describe lease <name> --devices` and cached per lease; device fetch
+ * expand into a driver tree fetched lazily via
+ * `jmp describe lease <name> --drivers` and cached per lease; driver fetch
  * failures render as an inline error node (never a modal).
  */
 
 import * as vscode from "vscode";
-import { Lease, LeaseDevices } from "../../types";
+import { Lease, LeaseDriverTree } from "../../types";
 import { describePending, JmpService, JmpError, PendingLease, PendingLeaseStore } from "../../services";
 import * as model from "./model";
 
@@ -63,9 +63,9 @@ type RootState =
   | { kind: "error"; message: string }
   | { kind: "data"; client: string; leases: Lease[] };
 
-interface DevicesCacheEntry {
-  promise?: Promise<LeaseDevices>;
-  devices?: LeaseDevices;
+interface DriverTreeCacheEntry {
+  promise?: Promise<LeaseDriverTree>;
+  driverTree?: LeaseDriverTree;
   error?: string;
 }
 
@@ -75,7 +75,7 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
     this.changeEmitter.event;
 
   private state: RootState = { kind: "loading" };
-  private readonly devicesCache = new Map<string, DevicesCacheEntry>();
+  private readonly driverTreeCache = new Map<string, DriverTreeCacheEntry>();
 
   constructor(
     private readonly jmp: JmpService,
@@ -100,17 +100,17 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
 
   setLeases(client: string, leases: Lease[]): void {
     if (this.state.kind !== "data" || this.state.client !== client) {
-      // Client switched (or first data): device sessions belong to the old
+      // Client switched (or first data): driver sessions belong to the old
       // client, drop them all.
-      this.devicesCache.clear();
+      this.driverTreeCache.clear();
     } else {
-      // Drop cached device trees for leases that are gone or no longer In-Use.
+      // Drop cached driver trees for leases that are gone or no longer In-Use.
       const inUse = new Set(
         leases.filter((l) => l.status === "In-Use").map((l) => l.name),
       );
-      for (const name of [...this.devicesCache.keys()]) {
+      for (const name of [...this.driverTreeCache.keys()]) {
         if (!inUse.has(name)) {
-          this.devicesCache.delete(name);
+          this.driverTreeCache.delete(name);
         }
       }
     }
@@ -119,13 +119,13 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
   }
 
   setNoClient(): void {
-    this.devicesCache.clear();
+    this.driverTreeCache.clear();
     this.state = { kind: "no-client" };
     this.changeEmitter.fire(undefined);
   }
 
   setAuthExpired(client: string): void {
-    this.devicesCache.clear();
+    this.driverTreeCache.clear();
     this.state = { kind: "auth-expired", client };
     this.changeEmitter.fire(undefined);
   }
@@ -151,9 +151,13 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
     }
   }
 
-  /** Drop the cached device tree for a lease and re-render. */
-  refreshDevices(leaseName: string): void {
-    this.devicesCache.delete(leaseName);
+  /** Drop one driver tree, or all of them after an environment/capability change. */
+  refreshDrivers(leaseName?: string): void {
+    if (leaseName === undefined) {
+      this.driverTreeCache.clear();
+    } else {
+      this.driverTreeCache.delete(leaseName);
+    }
     this.changeEmitter.fire(undefined);
   }
 
@@ -187,7 +191,7 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
       return this.rootChildren();
     }
     if (node.kind === "lease") {
-      return this.deviceChildren(node);
+      return this.driverChildren(node);
     }
     if (node.kind === "driver") {
       return node.descriptor.commands.map((descriptor) => ({
@@ -264,44 +268,53 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
     }
   }
 
-  private deviceChildren(node: LeaseNode): Promise<LeaseTreeNode[]> {
+  private driverChildren(node: LeaseNode): Promise<LeaseTreeNode[]> {
     if (node.lease.status !== "In-Use") {
       return Promise.resolve([]);
     }
+    if (!this.jmp.hasCapability("describeDrivers")) {
+      return Promise.resolve([
+        {
+          kind: "message",
+          text: "Driver browsing requires the integration-branch CLI and jumpstarter.experimentalCliFeatures.",
+          icon: "info",
+        },
+      ]);
+    }
     const name = node.lease.name;
-    let entry = this.devicesCache.get(name);
+    let entry = this.driverTreeCache.get(name);
     if (!entry) {
       entry = {};
       entry.promise = this.jmp
-        .describeLeaseWithDevices(node.client, name)
+        .describeLeaseWithDrivers(node.client, name)
         .then((result) => {
-          entry!.devices = result.devices;
+          entry!.driverTree = result.driver_tree;
           entry!.error = undefined;
-          return result.devices;
+          return result.driver_tree;
         })
         .catch((err: unknown) => {
           entry!.error = err instanceof JmpError ? err.message : String(err);
           throw err;
         });
-      this.devicesCache.set(name, entry);
+      this.driverTreeCache.set(name, entry);
     }
 
-    if (entry.devices) {
-      return Promise.resolve(this.driverNodes(node, entry.devices));
+    if (entry.driverTree) {
+      return Promise.resolve(this.driverNodes(node, entry.driverTree));
     }
     if (entry.error) {
-      return Promise.resolve(this.deviceErrorNodes(name, entry.error));
+      return Promise.resolve(this.driverErrorNodes(name, entry.error));
     }
     return entry.promise!.then(
-      (devices) => this.driverNodes(node, devices),
-      () => this.deviceErrorNodes(name, entry!.error ?? "Failed to load devices"),
+      (driverTree) => this.driverNodes(node, driverTree),
+      () => this.driverErrorNodes(name, entry!.error ?? "Failed to load drivers"),
     );
   }
 
-  private driverNodes(node: LeaseNode, devices: LeaseDevices): LeaseTreeNode[] {
-    const drivers = model.buildDriverNodes(devices);
+  private driverNodes(node: LeaseNode, driverTree: LeaseDriverTree): LeaseTreeNode[] {
+    const drivers = model.buildDriverNodes(driverTree);
     if (drivers.length === 0) {
-      return [{ kind: "message", text: "No devices reported", icon: "info" }];
+      return [{ kind: "message", text: "No drivers reported", icon: "info" }];
     }
     return drivers.map((descriptor) => ({
       kind: "driver",
@@ -311,7 +324,7 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
     }));
   }
 
-  private deviceErrorNodes(leaseName: string, message: string): LeaseTreeNode[] {
+  private driverErrorNodes(leaseName: string, message: string): LeaseTreeNode[] {
     return [
       {
         kind: "message",

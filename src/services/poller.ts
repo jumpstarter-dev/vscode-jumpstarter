@@ -8,7 +8,7 @@
  *  - fires an immediate refresh when the window regains focus;
  *  - pauses entirely while `setVisible(false)` (wire it to the tree view's
  *    onDidChangeVisibility);
- *  - never overlaps ticks — a tick still in flight skips the next interval;
+ *  - never overlaps ticks — refreshes during a tick coalesce into one follow-up;
  *  - swallows tick rejections after reporting them via `onTickError`.
  *
  * The auth rule (never poll a client with an expired token) is enforced by
@@ -46,7 +46,8 @@ export class Poller implements vscode.Disposable {
   private started = false;
   private visible = true;
   private focused: boolean;
-  private inFlight = false;
+  private inFlight: Promise<void> | undefined;
+  private refreshRequested = false;
   private readonly disposables: vscode.Disposable[] = [];
 
   private readonly tickErrorEmitter = new vscode.EventEmitter<unknown>();
@@ -88,6 +89,7 @@ export class Poller implements vscode.Disposable {
   /** Stop polling until start() is called again. */
   stop(): void {
     this.started = false;
+    this.refreshRequested = false;
     this.clearTimer();
   }
 
@@ -107,22 +109,30 @@ export class Poller implements vscode.Disposable {
     }
   }
 
-  /** Run a tick right now (also reschedules the next interval). */
-  async refreshNow(): Promise<void> {
+  /** Refresh and wait for queued updates too, rather than dropping a changed setting. */
+  refreshNow(): Promise<void> {
     this.clearTimer();
     if (this.inFlight) {
-      this.schedule();
-      return;
+      this.refreshRequested = true;
+      return this.inFlight;
     }
-    this.inFlight = true;
-    try {
-      await this.tick();
-    } catch (err) {
-      this.tickErrorEmitter.fire(err);
-    } finally {
-      this.inFlight = false;
-      this.schedule();
-    }
+    // Defer the tick until inFlight is assigned, even if tick is synchronous.
+    this.inFlight = Promise.resolve().then(async () => {
+      try {
+        do {
+          this.refreshRequested = false;
+          try {
+            await this.tick();
+          } catch (err) {
+            this.tickErrorEmitter.fire(err);
+          }
+        } while (this.refreshRequested);
+      } finally {
+        this.inFlight = undefined;
+        this.schedule();
+      }
+    });
+    return this.inFlight;
   }
 
   private schedule(): void {

@@ -4,7 +4,8 @@
  * A wizard asks only for a resource's identity, writes a commented YAML draft
  * and opens it. Whatever the wizard cannot ask about — an exporter set's
  * template, a client's labels — is edited there, and nothing reaches the
- * cluster until "Apply to Cluster" runs `jmp admin apply` on the file.
+ * cluster until "Apply to Cluster" runs `jmp admin apply` (experimental) or
+ * `kubectl apply` (current main) on the file.
  *
  * Also hosts importing: fetching the config the cluster issued for an existing
  * client or exporter (`jmp admin import`) and opening it for editing.
@@ -15,6 +16,7 @@
 import * as vscode from "vscode";
 import { AdminOptions, Services } from "../services";
 import { AppliedResource } from "../types";
+import { buildKubectlApplyArgs, runKubectlApply } from "../services/kubectl";
 import { openConfigForEditing } from "./openConfig";
 import { driverAllowEntries } from "./schemas/dynamic";
 import {
@@ -126,11 +128,17 @@ async function pickDriverAccess(
   services: Services,
 ): Promise<{ allow?: string[]; unsafe?: boolean } | undefined> {
   const unsafeLabel = "$(unlock) Allow every driver package (unsafe)";
-  const chooseLabel = "$(list-selection) Choose driver packages…";
+  const canListDrivers = services.jmp.hasCapability("driverSchema");
+  const chooseLabel = canListDrivers
+    ? "$(list-selection) Choose driver packages…"
+    : "$(edit) Enter driver packages…";
   const noneLabel = "$(circle-slash) Allow none for now";
   const choice = await vscode.window.showQuickPick(
     [
-      { label: chooseLabel, description: "pick from the drivers installed here" },
+      {
+        label: chooseLabel,
+        description: canListDrivers ? "pick from the drivers installed here" : "comma-separated client package patterns",
+      },
       { label: unsafeLabel, description: "any driver client the config asks for" },
       { label: noneLabel, description: "edit drivers.allow in the config later" },
     ],
@@ -144,6 +152,20 @@ async function pickDriverAccess(
   }
   if (choice.label === noneLabel) {
     return {};
+  }
+
+  // Main can import an explicit allow-list, but cannot discover client classes.
+  // Do not guess client package names from exporter driver types.
+  if (!canListDrivers) {
+    const raw = await vscode.window.showInputBox({
+      title: "Allowed driver clients",
+      prompt: "Comma-separated driver client package patterns; leave empty to allow none",
+      placeHolder: "jumpstarter_driver_power.*",
+      ignoreFocusOut: true,
+    });
+    return raw === undefined
+      ? undefined
+      : { allow: raw.split(",").map((value) => value.trim()).filter(Boolean) };
   }
 
   let entries: { value: string; documentation: string }[] = [];
@@ -319,8 +341,39 @@ async function applyDocument(
     return;
   }
 
+  // VS Code exposes our on-disk globalStorage drafts as vscode-userdata URIs.
+  if (document.uri.scheme !== "file" && document.uri.scheme !== "vscode-userdata") {
+    void vscode.window.showWarningMessage("Jumpstarter: save the manifest to a local file before applying.");
+    return;
+  }
+
   const verb = opts.dryRun ? "Validating" : "Applying";
   try {
+    if (!services.jmp.hasCapability("adminApply")) {
+      const executable = vscode.workspace.getConfiguration("jumpstarter")
+        .get<string>("kubectlPath", "kubectl").trim() || "kubectl";
+      const args = buildKubectlApplyArgs([document.uri.fsPath], options, opts.dryRun);
+      services.jmp.log(`[manifests] $ kubectl ${args.join(" ")}`);
+      const result = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: `${verb} manifest with kubectl…` },
+        () => runKubectlApply(executable, args),
+      );
+      if (result.stderr) {
+        services.jmp.log(`[kubectl] ${result.stderr}`);
+      }
+      if (!opts.dryRun) {
+        services.notifyLeasesChanged();
+        await vscode.commands.executeCommand("jumpstarter.admin.refresh");
+      }
+      // kubectl's name output does not say which namespace each resource used,
+      // so do not guess one for an automatic credential-import offer.
+      void vscode.window.showInformationMessage(
+        `Jumpstarter: ${opts.dryRun ? "validated" : "applied"} with kubectl: ${result.stdout || "manifest"}.`,
+      );
+      return;
+    }
+    // Select a backend before applying. Never retry a failed jmp apply through
+    // kubectl: a multi-resource apply may already have made partial changes.
     const applied = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: `${verb} manifest…` },
       () => services.jmp.adminApply([document.uri.fsPath], options, opts),

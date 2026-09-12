@@ -26,8 +26,7 @@ export function registerSchemas(context: vscode.ExtensionContext, services: Serv
       configHome: services.configWatcher.configHome,
       schemaPath: (fileName) => context.asAbsolutePath(path.join("schemas", fileName)),
       loadDrivers: async () => {
-        const availability = services.jmp.getAvailability();
-        if (availability?.kind === "ok" && !availability.capabilities.driverSchema) {
+        if (!services.jmp.hasCapability("driverSchema")) {
           return [];
         }
         return services.jmp.driverSchemas();

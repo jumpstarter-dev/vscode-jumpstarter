@@ -269,7 +269,7 @@ export interface JmpVersion {
   pythonVersion: string;
 }
 
-/** One driver instance inside a lease session (`jmp describe lease --devices`). */
+/** One driver instance inside a lease session (`jmp describe lease --drivers`). */
 export interface DeviceDriver {
   path: string;
   driver_path: string[];
@@ -298,7 +298,7 @@ export interface CliParam {
   choices?: string[];
 }
 
-/** Recursive `j` CLI tree from `jmp describe lease --devices`. */
+/** Recursive `j` CLI tree from `jmp describe lease --drivers`. */
 export interface CliTreeNode {
   name: string;
   help: string;
@@ -306,14 +306,14 @@ export interface CliTreeNode {
   subcommands: Record<string, CliTreeNode>;
 }
 
-export interface LeaseDevices {
+export interface LeaseDriverTree {
   drivers: DeviceDriver[];
   cli_tree: CliTreeNode;
 }
 
-export interface LeaseWithDevices {
+export interface LeaseWithDrivers {
   lease: Lease;
-  devices: LeaseDevices;
+  driver_tree: LeaseDriverTree;
 }
 
 /**

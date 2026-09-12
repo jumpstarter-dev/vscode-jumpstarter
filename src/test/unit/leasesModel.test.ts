@@ -27,7 +27,7 @@ import {
   tailOfPath,
   viewDescription,
 } from "../../features/leases/model";
-import { CliParam, CliTreeNode, Lease, LeaseDevices } from "../../types";
+import { CliParam, CliTreeNode, Lease, LeaseDriverTree } from "../../types";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -235,7 +235,7 @@ test("collectCommands: required params surface in the tooltip", () => {
 });
 
 test("buildDriverNodes: matches drivers to cli subtrees by driver_path", () => {
-  const devices: LeaseDevices = {
+  const driverTree: LeaseDriverTree = {
     drivers: [
       {
         path: "power",
@@ -249,7 +249,7 @@ test("buildDriverNodes: matches drivers to cli subtrees by driver_path", () => {
       power: cliGroup("power", { on: cliLeaf("on"), off: cliLeaf("off") }),
     }),
   };
-  const [node] = buildDriverNodes(devices);
+  const [node] = buildDriverNodes(driverTree);
   assert.equal(node.label, "power");
   assert.equal(node.description, "MockPower");
   assert.ok(node.tooltip.includes("on, off"));
@@ -260,7 +260,7 @@ test("buildDriverNodes: matches drivers to cli subtrees by driver_path", () => {
 });
 
 test("buildDriverNodes: hides the root composite session handle", () => {
-  const devices: LeaseDevices = {
+  const driverTree: LeaseDriverTree = {
     drivers: [
       {
         path: "client",
@@ -279,7 +279,7 @@ test("buildDriverNodes: hides the root composite session handle", () => {
     ],
     cli_tree: cliGroup("j", { power: cliGroup("power", { on: cliLeaf("on") }) }),
   };
-  const nodes = buildDriverNodes(devices);
+  const nodes = buildDriverNodes(driverTree);
   assert.deepEqual(
     nodes.map((n) => n.label),
     ["power"],
@@ -287,7 +287,7 @@ test("buildDriverNodes: hides the root composite session handle", () => {
 });
 
 test("buildDriverNodes: falls back to splitting the dotted path", () => {
-  const devices: LeaseDevices = {
+  const driverTree: LeaseDriverTree = {
     drivers: [
       {
         path: "dutlink.power",
@@ -301,7 +301,7 @@ test("buildDriverNodes: falls back to splitting the dotted path", () => {
       dutlink: cliGroup("dutlink", { power: cliGroup("power", { on: cliLeaf("on") }) }),
     }),
   };
-  const [node] = buildDriverNodes(devices);
+  const [node] = buildDriverNodes(driverTree);
   assert.deepEqual(
     node.commands.map((c) => c.label),
     ["j dutlink power on"],
@@ -309,7 +309,7 @@ test("buildDriverNodes: falls back to splitting the dotted path", () => {
 });
 
 test("buildDriverNodes: driver without a matching cli subtree gets no commands", () => {
-  const devices: LeaseDevices = {
+  const driverTree: LeaseDriverTree = {
     drivers: [
       {
         path: "mystery",
@@ -321,7 +321,7 @@ test("buildDriverNodes: driver without a matching cli subtree gets no commands",
     ],
     cli_tree: cliGroup("j", {}),
   };
-  const [node] = buildDriverNodes(devices);
+  const [node] = buildDriverNodes(driverTree);
   assert.deepEqual(node.commands, []);
   assert.equal(node.label, "mystery");
 });

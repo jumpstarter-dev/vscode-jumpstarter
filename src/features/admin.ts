@@ -174,13 +174,16 @@ class AdminTreeProvider implements vscode.TreeDataProvider<AdminNode>, vscode.Di
         // Local configs are a nicety here; the cluster listing is the point.
       }
       const options = await this.resolveOptions(localClients);
-      // One namespace, four listings; a failure in any of them is a failure of
-      // the whole view, since a half-read namespace is misleading here.
+      const canListExporterSets = this.services.jmp.hasCapability("adminExporterSets");
+      // One namespace, four listings when the CLI supports exporter sets; a
+      // missing optional listing must not make current main look broken.
       const [clients, exporters, leases, sets] = await Promise.all([
         this.services.jmp.adminClients(options),
         this.services.jmp.adminExporters(options),
         this.services.jmp.adminLeases(options),
-        this.services.jmp.adminExporterSets(options).catch(() => [] as AdminExporterSet[]),
+        canListExporterSets
+          ? this.services.jmp.adminExporterSets(options).catch(() => [] as AdminExporterSet[])
+          : Promise.resolve([] as AdminExporterSet[]),
       ]);
       const importedClients = importedClientNames(localClients);
       apply({

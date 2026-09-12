@@ -10,7 +10,7 @@ import {
   CliParam,
   CliTreeNode,
   Lease,
-  LeaseDevices,
+  LeaseDriverTree,
   LeaseStatus,
   leaseRemainingSeconds,
 } from "../../types";
@@ -35,7 +35,7 @@ export interface LeaseRowDescriptor {
   icon: string;
   /** Theme color id for the icon, if any. */
   iconColor: string | undefined;
-  /** Only In-Use leases expand into a device tree. */
+  /** Only In-Use leases expand into a driver tree. */
   expandable: boolean;
   createdByVscode: boolean;
 }
@@ -219,7 +219,7 @@ export function sortLeases(leases: readonly Lease[]): Lease[] {
 }
 
 // ---------------------------------------------------------------------------
-// Device tree (jmp describe lease --devices)
+// Driver tree (jmp describe lease --drivers)
 // ---------------------------------------------------------------------------
 
 /** Last segment of a dotted/slashed path ("dutlink.power" -> "power"). */
@@ -285,12 +285,12 @@ export function collectCommands(node: CliTreeNode, basePath: string[]): CommandD
  * its cli_tree subtree via driver_path, falling back to the dotted `path`
  * split into segments; drivers with no matching CLI subtree get no commands.
  */
-export function buildDriverNodes(devices: LeaseDevices): DriverNodeDescriptor[] {
-  const root = devices.cli_tree;
+export function buildDriverNodes(driverTree: LeaseDriverTree): DriverNodeDescriptor[] {
+  const root = driverTree.cli_tree;
   // The root composite is the session handle itself, not a device: it carries
   // an empty driver_path and no commands of its own, so its children are shown
   // directly under the lease.
-  const drivers = (devices.drivers ?? []).filter(
+  const drivers = (driverTree.drivers ?? []).filter(
     (driver) => (driver.driver_path ?? []).length > 0,
   );
   return drivers.map((driver) => {

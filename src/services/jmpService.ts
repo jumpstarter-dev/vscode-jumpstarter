@@ -38,7 +38,7 @@ import {
   GetLeasesResponse,
   JmpVersion,
   Lease,
-  LeaseWithDevices,
+  LeaseWithDrivers,
 } from "../types";
 
 export {
@@ -100,6 +100,12 @@ export class JmpService implements vscode.Disposable {
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration("jumpstarter.jmpPath")) {
           this.interpreterEmitter.fire();
+        }
+        if (
+          e.affectsConfiguration("jumpstarter.jmpPath") ||
+          e.affectsConfiguration("jumpstarter.experimentalCliFeatures") ||
+          e.affectsConfiguration("jumpstarter.experimentalDriverSchemas")
+        ) {
           void this.probe();
         }
       }),
@@ -137,6 +143,33 @@ export class JmpService implements vscode.Disposable {
     return this.availability;
   }
 
+  /** Fail closed before probing, and honor opt-out immediately (even during a re-probe). */
+  hasCapability(capability: keyof JmpCapabilities): boolean {
+    if (this.availability?.kind !== "ok") {
+      return false;
+    }
+    return this.configuredCapabilities(this.availability.version.gitVersion)[capability];
+  }
+
+  private configuredCapabilities(gitVersion: string): JmpCapabilities {
+    const config = vscode.workspace.getConfiguration("jumpstarter");
+    return protocol.computeCapabilities(
+      gitVersion,
+      config.get<boolean>("experimentalCliFeatures", false),
+      config.get<boolean>("experimentalDriverSchemas", false),
+    );
+  }
+
+  private requireCapability(capability: keyof JmpCapabilities, command: string): void {
+    if (!this.hasCapability(capability)) {
+      throw new JmpError(
+        "usage",
+        `${command} requires a compatible integration-branch CLI and jumpstarter.experimentalCliFeatures enabled.` +
+          (capability === "driverSchema" ? " Also enable jumpstarter.experimentalDriverSchemas." : ""),
+      );
+    }
+  }
+
   /** Probe `jmp version -o json` and recompute capability flags. */
   async probe(): Promise<JmpAvailability> {
     let result: JmpAvailability;
@@ -148,7 +181,7 @@ export class JmpService implements vscode.Disposable {
       result = {
         kind: "ok",
         version,
-        capabilities: protocol.computeCapabilities(version.gitVersion),
+        capabilities: this.configuredCapabilities(version.gitVersion),
       };
     } catch (err) {
       const jmpErr = err instanceof JmpError ? err : new JmpError("unknown", String(err));
@@ -451,6 +484,7 @@ export class JmpService implements vscode.Disposable {
    * environment), so callers should cache the result per interpreter.
    */
   async driverSchemas(): Promise<DriverSchema[]> {
+    this.requireCapability("driverSchema", "jmp driver schema");
     const res = await this.runJson<DriverSchemaResponse>(protocol.buildDriverSchemaArgs(), {
       timeoutMs: 120_000,
     });
@@ -473,15 +507,29 @@ export class JmpService implements vscode.Disposable {
   }
 
   /**
-   * `jmp describe lease <name> --devices -o json --client <client>` —
+   * `jmp describe lease <name> --drivers -o json --client <client>` —
    * drivers + recursive `j` CLI tree of the lease session. Establishing the
    * session can be slow, hence the longer timeout.
    */
-  describeLeaseWithDevices(client: string, name: string): Promise<LeaseWithDevices> {
-    return this.runJson<LeaseWithDevices>(
-      protocol.buildDescribeLeaseWithDevicesArgs(client, name),
-      { timeoutMs: 120_000 },
-    );
+  async describeLeaseWithDrivers(client: string, name: string): Promise<LeaseWithDrivers> {
+    this.requireCapability("describeDrivers", "jmp describe lease --drivers");
+    const args = protocol.buildDescribeLeaseWithDriversArgs(client, name);
+    try {
+      return await this.runJson<LeaseWithDrivers>(args, { timeoutMs: 120_000 });
+    } catch (err) {
+      // Older IDE integration builds expose this as --devices / {devices}.
+      // Only retry an explicit unknown-option error, never a session failure.
+      if (!(err instanceof JmpError) || err.kind !== "usage" ||
+          !/No such option: --drivers\b/.test(err.stderr)) {
+        throw err;
+      }
+      this.requireCapability("describeDrivers", "jmp describe lease --drivers");
+      const legacy = await this.runJson<{
+        lease: Lease;
+        devices: LeaseWithDrivers["driver_tree"];
+      }>(args.map((arg) => arg === "--drivers" ? "--devices" : arg), { timeoutMs: 120_000 });
+      return { lease: legacy.lease, driver_tree: legacy.devices };
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -509,7 +557,8 @@ export class JmpService implements vscode.Disposable {
     return this.adminList<AdminLease>("lease", options);
   }
 
-  adminExporterSets(options: AdminOptions = {}): Promise<AdminExporterSet[]> {
+  async adminExporterSets(options: AdminOptions = {}): Promise<AdminExporterSet[]> {
+    this.requireCapability("adminExporterSets", "jmp admin get exporterset");
     return this.adminList<AdminExporterSet>("exporterset", options);
   }
 
@@ -555,6 +604,7 @@ export class JmpService implements vscode.Disposable {
     options: AdminOptions = {},
     opts: { dryRun?: boolean } = {},
   ): Promise<AppliedResource[]> {
+    this.requireCapability("adminApply", "jmp admin apply");
     const res = await this.runJson<AdminList<AppliedResource>>(
       protocol.buildAdminApplyArgs(files, options, opts),
       { timeoutMs: 60_000 },

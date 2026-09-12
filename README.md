@@ -2,18 +2,19 @@
 
 Provides [Jumpstarter](https://jumpstarter.dev) Hardware-in-the-Loop (HIL) testing support to [Visual Studio Code](https://code.visualstudio.com/) via the [Jumpstarter CLI](https://docs.jumpstarter.dev/main/cli/index.html).
 
-The extension drives everything through the `jmp` CLI found in your project's
-active Python environment, so what you see in VS Code always matches what
-`jmp` would tell you in a terminal.
+The extension reads Jumpstarter state through the `jmp` CLI found in your
+project's active Python environment. Manifest apply uses `kubectl` as a
+fallback until `jmp admin apply` is available upstream.
 
 ## Requirements
 
 - The [Python extension](https://marketplace.visualstudio.com/items?itemName=ms-python.python)
   with an active interpreter/virtualenv selected.
-- `jumpstarter-cli` installed in that environment — **for now, from the
-  `ide-cli-integration` branch** (see [Jumpstarter CLI branch](#jumpstarter-cli-branch-temporary)).
-  The extension resolves `jmp` as `<python> -m jumpstarter_cli`; alternatively
-  point the `jumpstarter.jmpPath` setting at a specific `jmp` executable.
+- `jumpstarter-cli` installed in that environment. The extension is compatible
+  with the current `main` branch; see [Jumpstarter CLI compatibility](#jumpstarter-cli-compatibility)
+  for the optional integration-branch features. The extension resolves `jmp`
+  as `<python> -m jumpstarter_cli`; alternatively point the `jumpstarter.jmpPath`
+  setting at a specific `jmp` executable.
 - The [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
   for config validation and completion (optional; the rest works without it).
 - A Jumpstarter client configuration (`jmp login` / `jmp config client create`)
@@ -21,7 +22,9 @@ active Python environment, so what you see in VS Code always matches what
 - For the Administration view only: a kubeconfig with access to the cluster
   the Jumpstarter CRDs are installed in. Without one, that view stays hidden
   and everything else works as before. No Kubernetes extension is required —
-  administration goes through `jmp admin`, which reads the kubeconfig itself.
+  administration listings go through `jmp admin`, which reads the kubeconfig itself.
+- For manifest apply/validation with CLI `main`: `kubectl` on the extension
+  host's PATH (or set `jumpstarter.kubectlPath`).
 
 ## Installation
 
@@ -42,55 +45,77 @@ Reload the VS Code window afterwards. Reinstalling over the same version
 number replaces the files on disk but leaves the running extension in place,
 so reload (or bump the version) whenever you rebuild.
 
-## Jumpstarter CLI branch (temporary)
+## Jumpstarter CLI compatibility
 
-The extension reads everything from `jmp`, and several things it needs are
-not in a released `jumpstarter-cli` yet. Until those land upstream, point
-VS Code at a checkout of the
-[`ide-cli-integration`](https://github.com/jumpstarter-dev/jumpstarter/tree/ide-cli-integration)
-branch:
+Jumpstarter CLI compatibility is explicit. The
+current `main` branch (reviewed at `ca3b4831`) contains the prerequisite PRs needed for authentication,
+JSON status output, exporter/lease listing, client redaction, driver listing,
+`jmp describe` (without driver introspection), and administration labels:
+
+| Change | Status on `main` |
+| ------ | ---------------- |
+| `cli-auth-status-json` | [merged, #1037](https://github.com/jumpstarter-dev/jumpstarter/pull/1037) |
+| `cli-json-status-names` | [merged, #1038](https://github.com/jumpstarter-dev/jumpstarter/pull/1038) |
+| `cli-fix-exporter-lease-merge` | [merged, #1035](https://github.com/jumpstarter-dev/jumpstarter/pull/1035) |
+| `cli-logs-to-stderr` | [merged, #1034](https://github.com/jumpstarter-dev/jumpstarter/pull/1034) |
+| `cli-client-list-redact-credentials` | [merged, #1036](https://github.com/jumpstarter-dev/jumpstarter/pull/1036) |
+| `cli-driver-list-json` | [merged, #1041](https://github.com/jumpstarter-dev/jumpstarter/pull/1041) |
+| `cli-describe` | [merged, #1043](https://github.com/jumpstarter-dev/jumpstarter/pull/1043) |
+| `cli-admin-object-labels` | [merged, #1044](https://github.com/jumpstarter-dev/jumpstarter/pull/1044) |
+
+The remaining prerequisites are deferred for now: `cli-fix-shell-hook-log`
+([#1039](https://github.com/jumpstarter-dev/jumpstarter/pull/1039)),
+`client-introspect-lib`
+([#1042](https://github.com/jumpstarter-dev/jumpstarter/pull/1042)),
+`cli-admin-apply`
+([#1046](https://github.com/jumpstarter-dev/jumpstarter/pull/1046)), and
+`cli-import-no-credentials`
+([#1045](https://github.com/jumpstarter-dev/jumpstarter/pull/1045)) remain
+open. Lease driver introspection is now proposed as `cli-describe-drivers`
+([#1070](https://github.com/jumpstarter-dev/jumpstarter/pull/1070)), depending on
+#1042. `cli-driver-schema` and `cli-admin-exportersets` remain branch-only changes.
+
+The pending shell-log and missing-credentials fixes do not add APIs: shells
+and config imports remain available on `main`, but may show misleading hook
+messages or a less helpful error when credentials have not been issued.
+
+The extension defaults to the current-main contract. The features requiring
+the branch-only CLI APIs — driver schema completion, lease driver browsing,
+and exporter-set administration — are disabled by default by
+`jumpstarter.experimentalCliFeatures`. Driver schemas additionally require
+`jumpstarter.experimentalDriverSchemas` (also default `false`), so other
+experimental features can be enabled without importing local driver modules
+for schema discovery. Only enable schema discovery for trusted driver packages.
+Without it, bundled YAML schemas and manual driver allow-list entry still work.
+Resource drafting, apply, and validation
+work on `main` using `kubectl apply` and `kubectl apply --dry-run=server`.
+With experimental CLI features enabled, apply uses `jmp admin apply` instead.
+To try the complete integration build,
+check out the branch and opt in:
 
 ```sh
 git clone https://github.com/jumpstarter-dev/jumpstarter.git
 cd jumpstarter
 git switch ide-cli-integration
-
 cd python
 make sync            # uv sync --all-packages --all-extras -> python/.venv
 ```
 
-Then either select that environment in VS Code (**Python: Select
-Interpreter** → `<jumpstarter>/python/.venv/bin/python`), or set:
+Then select `<jumpstarter>/python/.venv/bin/python` in VS Code and enable
+`jumpstarter.experimentalCliFeatures`, or configure both settings directly:
 
 ```json
-{ "jumpstarter.jmpPath": "<jumpstarter>/python/.venv/bin/jmp" }
+{
+  "jumpstarter.jmpPath": "<jumpstarter>/python/.venv/bin/jmp",
+  "jumpstarter.experimentalCliFeatures": true,
+  "jumpstarter.experimentalDriverSchemas": true
+}
 ```
 
-That branch merges the following changes, each also on its own branch for
-upstream review:
-
-| Branch | What the extension needs it for |
-| ------ | ------------------------------- |
-| `cli-auth-status-json` | `jmp auth status -o json`, so background polling can check a token without triggering an interactive login |
-| `cli-json-status-names` | Exporter status as names rather than protobuf integers, and the derived lease status, in JSON output |
-| `cli-fix-exporter-lease-merge` | `--with leases` no longer drops each exporter's status and labels |
-| `cli-logs-to-stderr` | Log lines on stderr, so they stop corrupting `-o json` payloads |
-| `cli-fix-shell-hook-log` | No phantom "waiting for beforeLease hook" when attaching to a ready lease |
-| `cli-client-list-redact-credentials` | `jmp config client list -o json` no longer prints tokens |
-| `cli-driver-list-json` / `cli-driver-schema` | Installed driver types and their config keys, for YAML completion |
-| `client-introspect-lib` / `cli-describe` / `cli-describe-devices` | `jmp describe lease --devices`, which powers the device tree and its runnable commands |
-| `cli-admin-exportersets` | `jmp admin get exporterset`, and the controller labels that let a client tell which pool an exporter belongs to |
-| `cli-admin-apply` | `jmp admin apply -f`, which is how the new-resource wizards send an edited manifest to the cluster |
-| `cli-import-no-credentials` | A readable error, rather than a traceback, for a resource whose credentials the controller has not issued yet |
-| `cli-admin-object-labels` | Labels in `jmp admin get client\|exporter -o json`, so the Administration view can show what an exporter is selected by |
-
-With a `jmp` that predates these changes the extension still starts, and the
-Clients view and YAML driver completion switch themselves off. The rest is
-best-effort: the device tree and anything else built on a missing subcommand
-reports the CLI's error in place rather than silently doing nothing. The
-capability probe keys off `jmp version`, which cannot distinguish a released
-build from one carrying these unreleased changes — so use the branch above
-until they land.
+Do not enable that flag with a `jmp` from current `main`; it is specifically
+for the integration branch. Older releases are not the supported baseline:
+version checks disable some optional features, but do not guarantee that all
+polling commands or JSON fields exist. Use current `main` for the default mode.
 
 ## Features
 
@@ -136,8 +161,13 @@ icon.
 
 - **Open Shell in Lease** — a terminal attached to the lease
   (`jmp shell --lease …`).
-- Expand an in-use lease to browse its **devices and driver commands**; click
-  a command (e.g. `j power on`) to run it in a lease terminal.
+- Expand an in-use lease to browse its **drivers and their commands**; click
+  a command (e.g. `j power on`) to run it in a lease terminal. This requires
+  the integration-branch CLI and `jumpstarter.experimentalCliFeatures`.
+  The new API is `jmp describe lease --drivers` with a `driver_tree` JSON field;
+  older integration builds using `--devices` are supported through a compatibility
+  fallback. These are software driver clients, not a physical hardware inventory
+  (see [terminology audit](docs/driver-device-terminology.md)).
 - **Run Current File in Lease** — runs the active editor file with `python`
   inside the lease session.
 - **Extend Lease…**, **End Lease**, **Copy JMP_LEASE Export Line**,
@@ -153,25 +183,33 @@ Appears only when this machine can actually administer a cluster: a kubeconfig
 that resolves and a cluster serving the Jumpstarter CRDs. Everything else in
 the extension looks through one client's eyes; this view uses `jmp admin`, so
 it shows **every** client, exporter, exporter set and lease in a namespace,
-whoever owns them.
+whoever owns them. Exporter-set listing requires the integration-branch CLI
+and `jumpstarter.experimentalCliFeatures`.
 
 - The namespace follows your current client's config unless you set one
   (**Administer Namespace…**, or `jumpstarter.admin.namespace`).
 - **Import Client Config** / **Import Exporter Config** fetch the credentials
   the cluster issued for an existing resource (`jmp admin import`) and open the
   resulting YAML for editing. For a client you are asked which driver packages
-  it may load, offered from the drivers installed in your environment.
+  it may load: enter client package patterns on `main`, or choose from installed
+  drivers when experimental CLI features are enabled.
 - **New Cluster Resource…** drafts a **Client**, **Exporter** or
   **ExporterSet** as commented YAML and opens it. Nothing is sent until you
-  press **Apply to Cluster** (`jmp admin apply`), so the parts a wizard cannot
+  press **Apply to Cluster** (`kubectl apply` on `main`, experimental `jmp admin apply`
+  otherwise), so the parts a wizard cannot
   ask about — an exporter set's template, a client's labels — are edited
   first. **Validate Manifest Against the Cluster** runs the same thing as a
   server-side dry run.
 - Any YAML file with a `jumpstarter.dev` `apiVersion` gets the same
   **Apply to Cluster** button in its editor title, so manifests kept in a repo
   apply from here too.
-- After applying a Client or Exporter, the extension offers to import the
-  config the controller generated for it.
+- Apply and validation use the Administration view's namespace, kubeconfig,
+  and context. With `kubectl`, an explicit manifest namespace must match the
+  selected namespace. Standard `kubectl apply` semantics apply to the whole file.
+- After applying through `jmp`, the extension offers to import generated configs.
+  With the `kubectl` fallback, use **Import Client Config** / **Import Exporter
+  Config** once the controller has issued credentials. Failed applies are never
+  automatically retried through the other backend.
 - Leases show active ones by default; **Toggle Ended Leases** includes the
   history.
 
@@ -261,6 +299,8 @@ managed by the extension.
 | Setting | Default | Description |
 | ------- | ------- | ----------- |
 | `jumpstarter.jmpPath` | `""` | Path to a `jmp` executable. When set, it is invoked directly instead of resolving `jumpstarter_cli` from the active Python environment. |
+| `jumpstarter.kubectlPath` | `"kubectl"` | Executable used for manifest apply/validation when experimental `jmp admin apply` is unavailable. |
+| `jumpstarter.experimentalCliFeatures` | `false` | Enable CLI APIs still on `ide-cli-integration` (driver schemas, driver browsing, exporter-set administration, and `jmp admin apply` instead of `kubectl`). |
 | `jumpstarter.pollIntervalSeconds` | `15` | How often (in seconds) the Jumpstarter views poll the controller for exporters and leases (minimum 5). The Administration view polls at half this rate, and never faster than every 30s. |
 | `jumpstarter.admin.namespace` | `""` | Namespace the Administration view reads. Empty follows the current client config's namespace. |
 | `jumpstarter.admin.kubeconfig` | `""` | Kubeconfig for cluster administration. Empty uses the usual `KUBECONFIG` / `~/.kube/config` resolution. |
@@ -297,12 +337,11 @@ compiled output under plain Node.
 the actual commands and views. It needs a display; on a headless machine run it
 under `xvfb-run -a pnpm test`.
 
-The tests are hermetic — no cluster, no controller, not even Python — because
-the extension reaches the outside world through exactly one channel: it spawns
-`jmp` and parses stdout. `src/test/fixtures/fake-jmp.mjs` replaces that one
-binary with a script that answers each subcommand with known data, so
-everything above it runs for real. The harness points `jumpstarter.jmpPath` at
-it during activation.
+The tests are hermetic — no cluster, no controller, not even Python.
+`src/test/fixtures/fake-jmp.mjs` and `fake-kubectl.mjs` replace the CLI executables
+with scripts that return known data, so everything above them runs for real.
+The harness sets `jumpstarter.jmpPath` and `jumpstarter.kubectlPath` during
+activation, including for default-mode apply and validation tests.
 
 Two things make the fake useful as a test double:
 
@@ -318,7 +357,7 @@ All 40 contributed commands are exercised, along with the scenarios that only
 show up at this level: the views' error rows, an expired token stopping the
 polling instead of triggering a browser login, the confirmations before a lease
 is ended or a client deleted, the argv handed to every terminal, and the
-device tree with its prompted arguments. The host is started with
+driver tree with its prompted arguments. The host is started with
 `JMP_CLIENT_CONFIG_HOME` pointing at a scratch directory (and the harness
 refuses to run against a real one), so the tests that scaffold and import
 configs write real files without touching yours.

@@ -7,7 +7,7 @@
  * - Live remaining-time countdown between polls (local timer, no jmp calls).
  * - Per-lease actions: open shell, run current file, extend, end lease,
  *   copy JMP_LEASE export line.
- * - In-Use leases expand into a cached device tree (drivers + runnable `j`
+ * - In-Use leases expand into a cached driver tree (drivers + runnable `j`
  *   commands); command leaves run inside the lease session in a terminal.
  */
 
@@ -118,7 +118,10 @@ export function registerLeases(
   };
   context.subscriptions.push(
     services.configWatcher.onDidChangeConfig(restart),
-    jmp.onDidChangeAvailability(() => restart()),
+    jmp.onDidChangeAvailability(() => {
+      provider.refreshDrivers();
+      restart();
+    }),
     // A lease acquired from the Exporters view belongs here immediately.
     services.onDidChangeLeases(() => void poller.refreshNow()),
   );
@@ -372,11 +375,8 @@ export function registerLeases(
 
   context.subscriptions.push(
     vscode.commands.registerCommand("jumpstarter.leases.refresh", () => {
-      if (!poller.running) {
-        poller.start();
-      } else {
-        void poller.refreshNow();
-      }
+      poller.start();
+      return poller.refreshNow();
     }),
 
     vscode.commands.registerCommand("jumpstarter.leases.toggleEnded", () => {
@@ -385,7 +385,7 @@ export function registerLeases(
       // start() only ticks of its own accord while the view is visible — so a
       // toggle on a stopped poller would otherwise show the old list.
       poller.start();
-      void poller.refreshNow();
+      return poller.refreshNow();
     }),
 
     vscode.commands.registerCommand("jumpstarter.leases.openShell", async (node: unknown) => {
@@ -499,14 +499,14 @@ export function registerLeases(
       "jumpstarter.leases.refreshDevices",
       (node: unknown) => {
         // Invoked from the lease context menu (LeaseNode) or from the inline
-        // device-error node's retry action ({ leaseName }).
+        // driver-error node's retry action ({ leaseName }).
         let leaseName: string | undefined;
         if (node && typeof node === "object") {
           const n = node as { kind?: string; lease?: { name?: string }; leaseName?: string };
           leaseName = n.kind === "lease" ? n.lease?.name : n.leaseName;
         }
         if (leaseName) {
-          provider.refreshDevices(leaseName);
+          provider.refreshDrivers(leaseName);
         }
       },
     ),

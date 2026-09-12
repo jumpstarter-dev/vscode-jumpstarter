@@ -69,7 +69,7 @@ suite("entry points", () => {
     expectCall("admin", "import", "exporter", "bench-1");
   });
 
-  test("refreshing devices re-reads the session rather than serving the cache", async () => {
+  test("refreshing drivers re-reads the session rather than serving the cache", async () => {
     const leaseNodes = (await api.trees.leases.getChildren()) ?? [];
     const lease = leaseNodes[0];
     // Populate the cache first.

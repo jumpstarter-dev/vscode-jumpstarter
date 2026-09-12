@@ -88,7 +88,7 @@ export function activate(context: vscode.ExtensionContext): JumpstarterApi {
   // acquisition by exporter or label selector)
   const exportersTree = registerExporters(context, services);
 
-  // FEATURE REGISTRATION: leases (tree view jumpstarter.leases, device tree,
+  // FEATURE REGISTRATION: leases (tree view jumpstarter.leases, driver tree,
   // shell / run-in-lease terminals, extend/end lease)
   const leasesTree = registerLeases(context, services);
 

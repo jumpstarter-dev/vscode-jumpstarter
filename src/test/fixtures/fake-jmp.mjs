@@ -56,6 +56,23 @@ const valueOf = (flag) => {
   return index >= 0 ? argv[index + 1] : undefined;
 };
 
+// Model the missing APIs on upstream main instead of silently accepting the
+// integration-branch contract in default-mode tests.
+if (process.env.JMP_FAKE_MAIN_ONLY && (
+  startsWith("driver", "schema") ||
+  (startsWith("describe", "lease") && (has("--drivers") || has("--devices"))) ||
+  startsWith("admin", "get", "exporterset") ||
+  startsWith("admin", "apply")
+)) {
+  process.stderr.write("Error: experimental command is unavailable on main\n");
+  process.exit(2);
+}
+
+if (process.env.JMP_FAKE_LEGACY_DRIVERS && startsWith("describe", "lease") && has("--drivers")) {
+  process.stderr.write("Error: No such option: --drivers\n");
+  process.exit(2);
+}
+
 const ENDPOINT = "grpc.fake.test:443";
 
 const exporters = {
@@ -130,7 +147,7 @@ const adminMeta = (name, labels) => ({
 });
 
 const responses = [
-  [() => startsWith("version"), { gitVersion: "v0.99.0-fake", pythonVersion: "3.12.0 (fake)" }],
+  [() => startsWith("version"), { gitVersion: "0.10.0.dev53+gca3b4831", pythonVersion: "3.12.0 (fake)" }],
 
   [
     () => startsWith("config", "client", "list"),
@@ -351,13 +368,14 @@ function respond() {
     return true;
   }
 
-  // `describe lease --devices` is what the device tree is built from: the
+  // `describe lease --drivers` is what the driver tree is built from: the
   // drivers in the session, and the `j` command tree they expose.
-  if (startsWith("describe", "lease") && has("--devices")) {
+  if (startsWith("describe", "lease") && (has("--drivers") ||
+      (process.env.JMP_FAKE_LEGACY_DRIVERS && has("--devices")))) {
     process.stdout.write(
       JSON.stringify({
         lease,
-        devices: {
+        [has("--drivers") ? "driver_tree" : "devices"]: {
           drivers: [
             {
               path: "power",

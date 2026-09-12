@@ -50,7 +50,7 @@ export function configHome(): string {
  * Safe to call from every test file: activation happens once per host, and the
  * settings are idempotent.
  */
-export async function activateWithFakeCli(): Promise<JumpstarterApi> {
+export async function activateWithFakeCli(experimentalCliFeatures = true): Promise<JumpstarterApi> {
   if (!logFile) {
     // .vscode-test.mjs picks the path so the host has it from the start;
     // fall back to a temp file when a runner did not set one.
@@ -61,6 +61,11 @@ export async function activateWithFakeCli(): Promise<JumpstarterApi> {
 
   const config = vscode.workspace.getConfiguration("jumpstarter");
   await config.update("jmpPath", fakeJmpPath(), vscode.ConfigurationTarget.Global);
+  await config.update("kubectlPath", path.join(path.dirname(fakeJmpPath()), "fake-kubectl.mjs"), vscode.ConfigurationTarget.Global);
+  // Most suites exercise the full integration contract; compatibility tests
+  // explicitly select the default, current-main mode.
+  await config.update("experimentalCliFeatures", experimentalCliFeatures, vscode.ConfigurationTarget.Global);
+  await config.update("experimentalDriverSchemas", experimentalCliFeatures, vscode.ConfigurationTarget.Global);
   // Poll rarely: the tests drive refreshes themselves, and a background tick
   // racing an assertion is the classic source of flakes here.
   await config.update("pollIntervalSeconds", 3600, vscode.ConfigurationTarget.Global);

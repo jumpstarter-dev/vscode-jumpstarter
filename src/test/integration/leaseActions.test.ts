@@ -1,6 +1,6 @@
 /**
  * What you can do with a lease you hold: open a session in it, run a file or a
- * driver command inside it, extend it, end it, and browse its device tree.
+ * driver command inside it, extend it, end it, and browse its driver tree.
  */
 
 import * as assert from "assert";
@@ -36,8 +36,37 @@ suite("lease actions", () => {
     const drivers = await labelsUnder(api, leaseNode);
     assert.deepEqual(drivers, ["power", "storage"]);
     expectCall("describe", "lease");
-    // The device tree costs a session, so it is asked for with --devices.
-    assert.ok(expectCall("describe", "lease").includes("--devices"));
+    // The driver tree costs a session, so it is asked for with --drivers.
+    assert.ok(expectCall("describe", "lease").includes("--drivers"));
+  });
+
+  test("older integration CLIs are normalized to the driver-tree contract", async () => {
+    process.env.JMP_FAKE_LEGACY_DRIVERS = "1";
+    clearCliCalls();
+    try {
+      const result = await api.services.jmp.describeLeaseWithDrivers("fake", "lease-1");
+      assert.ok(result.driver_tree.drivers.length > 0);
+      assert.ok(!("devices" in result));
+      const calls = callsMatching("describe", "lease");
+      assert.equal(calls.length, 2);
+      assert.ok(calls[0].includes("--drivers"));
+      assert.ok(calls[1].includes("--devices"));
+    } finally {
+      delete process.env.JMP_FAKE_LEGACY_DRIVERS;
+    }
+  });
+
+  test("driver introspection failures do not retry through the legacy API", async () => {
+    process.env.JMP_FAKE_FAIL = "describe lease";
+    clearCliCalls();
+    try {
+      await assert.rejects(() => api.services.jmp.describeLeaseWithDrivers("fake", "lease-1"));
+      const calls = callsMatching("describe", "lease");
+      assert.equal(calls.length, 1);
+      assert.ok(calls[0].includes("--drivers"));
+    } finally {
+      delete process.env.JMP_FAKE_FAIL;
+    }
   });
 
   test("a driver expands into the commands it can run", async () => {
@@ -129,9 +158,23 @@ suite("lease actions", () => {
   });
 
   test("copying the export line gives something that can be pasted into a shell", async () => {
-    await vscode.commands.executeCommand("jumpstarter.leases.copyExport", leaseNode);
-    const copied = await vscode.env.clipboard.readText();
-    assert.match(copied, /JMP_LEASE=lease-1/);
+    // Do not read or overwrite the developer's desktop clipboard. Other apps
+    // can also change it between the command and assertion on a real display.
+    const original = Object.getOwnPropertyDescriptor(vscode.env, "clipboard")!;
+    let copied = "";
+    Object.defineProperty(vscode.env, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => { copied = text; },
+        readText: async () => copied,
+      },
+    });
+    try {
+      await vscode.commands.executeCommand("jumpstarter.leases.copyExport", leaseNode);
+      assert.match(copied, /JMP_LEASE=lease-1/);
+    } finally {
+      Object.defineProperty(vscode.env, "clipboard", original);
+    }
   });
 
   test("ending a lease asks first, and does nothing when refused", async () => {

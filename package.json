@@ -219,7 +219,7 @@
       },
       {
         "command": "jumpstarter.leases.refreshDevices",
-        "title": "Refresh Devices",
+        "title": "Refresh Drivers",
         "category": "Jumpstarter"
       },
       {
@@ -378,6 +378,14 @@
         {
           "command": "jumpstarter.admin.toggleEndedLeases",
           "when": "jumpstarter.adminAvailable"
+        },
+        {
+          "command": "jumpstarter.applyManifest",
+          "when": "jumpstarter.adminAvailable && jumpstarter.canApplyManifest"
+        },
+        {
+          "command": "jumpstarter.validateManifest",
+          "when": "jumpstarter.adminAvailable && jumpstarter.canApplyManifest"
         }
       ],
       "view/title": [
@@ -576,7 +584,7 @@
         {
           "command": "jumpstarter.leases.refreshDevices",
           "when": "view == jumpstarter.leases && viewItem =~ /^jumpstarterLease-inUse/",
-          "group": "4_devices@1"
+          "group": "4_drivers@1"
         },
         {
           "command": "jumpstarter.leases.runDeviceCommand",
@@ -631,6 +639,21 @@
           "type": "string",
           "default": "",
           "markdownDescription": "Path to a `jmp` executable. When set, it is invoked directly instead of resolving `jumpstarter_cli` from the active Python environment."
+        },
+        "jumpstarter.kubectlPath": {
+          "type": "string",
+          "default": "kubectl",
+          "markdownDescription": "Path to `kubectl`, used for manifest apply and server-side dry-run validation when `jmp admin apply` is unavailable. Defaults to `kubectl` on the extension host's PATH."
+        },
+        "jumpstarter.experimentalCliFeatures": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Enable Jumpstarter CLI features that are not yet available on the current `main` branch. Use only with the `ide-cli-integration` CLI branch."
+        },
+        "jumpstarter.experimentalDriverSchemas": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Enable environment-aware driver YAML completion, validation, and driver-client allow-list suggestions. Requires `jumpstarter.experimentalCliFeatures` and a compatible CLI providing `jmp driver schema`. Imports locally installed driver modules to inspect them; leave disabled unless you trust those packages."
         },
         "jumpstarter.admin.namespace": {
           "type": "string",

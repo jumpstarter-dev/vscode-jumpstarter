@@ -380,8 +380,8 @@ export function buildDescribeArgs(
   return args;
 }
 
-export function buildDescribeLeaseWithDevicesArgs(client: string, name: string): string[] {
-  return ["describe", "lease", name, "--devices", "-o", "json", "--client", client];
+export function buildDescribeLeaseWithDriversArgs(client: string, name: string): string[] {
+  return ["describe", "lease", name, "--drivers", "-o", "json", "--client", client];
 }
 
 /**
@@ -506,7 +506,7 @@ export function buildAdminApplyArgs(
 // Version gate / capabilities
 // ---------------------------------------------------------------------------
 
-/** Feature flags derived from the probed jmp version. */
+/** Feature flags derived from the probed jmp version and user settings. */
 export interface JmpCapabilities {
   /** `jmp auth status -o json` exists. */
   authStatus: boolean;
@@ -514,12 +514,16 @@ export interface JmpCapabilities {
   driverList: boolean;
   /** `jmp driver schema -o json` exists (per-driver config keys). */
   driverSchema: boolean;
-  /** `jmp describe lease --devices -o json` exists. */
-  describeDevices: boolean;
+  /** Lease driver introspection exists (including the legacy integration-branch API). */
+  describeDrivers: boolean;
   /** `--with leases,online,status` on `jmp get exporters` exists. */
   exporterStatusColumns: boolean;
   /** `jmp get leases` reports the status field. */
   leaseStatus: boolean;
+  /** `jmp admin get exporterset` exists. */
+  adminExporterSets: boolean;
+  /** `jmp admin apply -f` exists. */
+  adminApply: boolean;
 }
 
 /**
@@ -534,19 +538,26 @@ export function parseGitVersion(gitVersion: string): [number, number, number] | 
   return [Number(m[1]), Number(m[2]), Number(m[3] ?? "0")];
 }
 
-/** Minimum jmp version carrying every capability the extension uses. */
-export const FULL_FEATURE_VERSION: [number, number, number] = [0, 10, 0];
+/** Version family used by current main; not a subcommand probe for older dev builds. */
+export const MAIN_FEATURE_VERSION: [number, number, number] = [0, 10, 0];
 
 /**
- * Compute capability flags from a probed version. Versions at or above
- * FULL_FEATURE_VERSION (and unparseable dev versions) get everything;
- * older releases are assumed to lack the newer JSON subcommands.
+ * Compute capability flags from a probed version.
+ *
+ * The capabilities already in Jumpstarter's current `main` are enabled by
+ * the version gate. APIs that are still only on the IDE integration branch
+ * require the explicit opt-in, so a checkout of current `main` never gets
+ * sent arguments it does not understand.
  */
-export function computeCapabilities(gitVersion: string): JmpCapabilities {
+export function computeCapabilities(
+  gitVersion: string,
+  experimentalCliFeatures = false,
+  experimentalDriverSchemas = false,
+): JmpCapabilities {
   const v = parseGitVersion(gitVersion);
   const atLeast = (min: [number, number, number]): boolean => {
     if (v === null) {
-      // Unparseable — assume a dev build with everything.
+      // Unparseable — assume a current dev build; experimental APIs still need opt-in.
       return true;
     }
     for (let i = 0; i < 3; i++) {
@@ -559,14 +570,17 @@ export function computeCapabilities(gitVersion: string): JmpCapabilities {
     }
     return true;
   };
-  const full = atLeast(FULL_FEATURE_VERSION);
+  const main = atLeast(MAIN_FEATURE_VERSION);
+  const experimental = main && experimentalCliFeatures;
   return {
-    authStatus: full,
-    driverList: full,
-    driverSchema: full,
-    describeDevices: full,
-    exporterStatusColumns: full,
-    leaseStatus: full,
+    authStatus: main,
+    driverList: main,
+    driverSchema: experimental && experimentalDriverSchemas,
+    describeDrivers: experimental,
+    exporterStatusColumns: main,
+    leaseStatus: main,
+    adminExporterSets: experimental,
+    adminApply: experimental,
   };
 }
 

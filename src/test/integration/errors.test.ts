@@ -96,6 +96,7 @@ suite("failures", () => {
       Buffer.from("apiVersion: jumpstarter.dev/v1alpha1\nkind: Client\nmetadata:\n  name: x\n"),
     );
     process.env.JMP_FAKE_FAIL = "admin apply";
+    clearCliCalls();
 
     let reported = "";
     const window = vscode.window as unknown as Record<string, unknown>;
@@ -111,5 +112,7 @@ suite("failures", () => {
     }
 
     assert.match(reported, /apply failed/i);
+    assert.equal(callsMatching("admin", "apply").length, 1);
+    assert.deepEqual(callsMatching("kubectl", "apply"), [], "a failed jmp apply must not be retried");
   });
 });
