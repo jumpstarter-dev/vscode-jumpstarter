@@ -45,6 +45,11 @@ export interface PanelDocument {
   nonce: string;
   /** What a screen reader calls the frame. */
   title: string;
+  /**
+   * What the panel is, for VS Code to keep with it: a window that is loaded again (a browser reload, a restart)
+   * gives it back, and the panel is made again from it.
+   */
+  state?: unknown;
 }
 
 /**
@@ -52,9 +57,9 @@ export interface PanelDocument {
  * tells the framed page the window's theme — when the frame loads, when the
  * page says it is ready, and whenever the theme changes.
  */
-export function buildPanelHtml({ link, nonce, title }: PanelDocument): string {
+export function buildPanelHtml({ link, nonce, title, state }: PanelDocument): string {
   const origin = new URL(link).origin;
-  const config = JSON.stringify({ origin, type: HOST_MESSAGE, sources: HOST_TOKEN_SOURCES }).replace(
+  const config = JSON.stringify({ origin, type: HOST_MESSAGE, sources: HOST_TOKEN_SOURCES, state }).replace(
     /</g,
     "\\u003c",
   );
@@ -76,6 +81,10 @@ export function buildPanelHtml({ link, nonce, title }: PanelDocument): string {
 (function () {
   var config = ${config};
   var frame = document.getElementById("view");
+  // kept by VS Code with the panel, and handed to the extension when the window is loaded again
+  if (config.state && typeof acquireVsCodeApi === "function") {
+    acquireVsCodeApi().setState(config.state);
+  }
   function theme() {
     var style = getComputedStyle(document.documentElement);
     var tokens = {};
@@ -107,5 +116,20 @@ export function buildPanelHtml({ link, nonce, title }: PanelDocument): string {
 })();
 </script>
 </body>
+</html>`;
+}
+
+/** A panel with a sentence in it and no frame: what is shown while its view is found again, or cannot be. */
+export function buildMessageHtml(nonce: string, message: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'">
+<style nonce="${nonce}">
+  body { margin: 0; padding: 16px; color: var(--vscode-descriptionForeground); font: var(--vscode-font-size) var(--vscode-font-family); }
+</style>
+</head>
+<body>${escapeHtml(message)}</body>
 </html>`;
 }

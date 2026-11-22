@@ -380,3 +380,45 @@ export function isLoopback(url: string): boolean {
 export function tail(output: string, lines = 8): string {
   return output.trim().split("\n").slice(-lines).join("\n");
 }
+
+/** What a panel is, kept by VS Code with it so that it can be made again when the window is loaded again. */
+export interface PanelState {
+  client: string;
+  lease: string;
+  /** The page's route, the part of the link after `#`: nothing of it is secret. */
+  route: string;
+  title: string;
+  icon?: string;
+}
+
+/** The state of a panel for a link (the link's own address and token are not kept: they are the server's). */
+export function panelState(client: string, lease: string, link: string, title: string, icon?: string): PanelState {
+  return { client, lease, route: new URL(link).hash, title, ...(icon ? { icon } : {}) };
+}
+
+/** A kept state, if it is one: every field of the right kind, and a route that is a device link. */
+export function parsePanelState(value: unknown): PanelState | undefined {
+  if (value === null || typeof value !== "object") {
+    return undefined;
+  }
+  const { client, lease, route, title, icon } = value as Record<string, unknown>;
+  if (typeof client !== "string" || typeof lease !== "string" || typeof title !== "string") {
+    return undefined;
+  }
+  if (typeof route !== "string" || !route.startsWith("#/d/") || route.length > 2000) {
+    return undefined;
+  }
+  return { client, lease, route, title, ...(typeof icon === "string" ? { icon } : {}) };
+}
+
+/** A server's address with a kept route. */
+export function linkFor(serverUrl: string, route: string): string {
+  const url = new URL(serverUrl);
+  url.hash = route;
+  return url.toString();
+}
+
+/** Whether a server that ended before it listened did so because its port was taken. */
+export function portTaken(message: string): boolean {
+  return /address already in use|EADDRINUSE|Errno 98|Errno 48/i.test(message);
+}

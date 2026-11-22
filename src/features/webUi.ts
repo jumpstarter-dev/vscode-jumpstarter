@@ -34,8 +34,17 @@ import { buildDriverNodes } from "./leases/model";
 import type { DriverNodeDescriptor } from "./leases/model";
 import type { DriverNode, LeasesTreeProvider } from "./leases/provider";
 import * as model from "./webUi/model";
-import { buildPanelHtml } from "./webUi/panel";
+import { buildMessageHtml, buildPanelHtml } from "./webUi/panel";
 import { randomBytes } from "crypto";
+
+/** The type of a Jumpstarter panel: what VS Code restores them by. */
+const PANEL_TYPE = "jumpstarter.webView";
+
+/** Whose view a panel shows. */
+interface LeaseOwner {
+  client: string;
+  lease: string;
+}
 
 interface LeaseRef {
   client: string;
@@ -125,6 +134,8 @@ export function registerWebUi(
 
   const servers = new Map<string, RunningServer>();
   const starting = new Map<string, Promise<RunningServer>>();
+  /** Endpoint ports that turned out to be taken by something that is not this window's. */
+  const busyPorts = new Set<number>();
   /** The ports of the servers that are starting, by lease: taken, though not in `servers` yet. */
   const startingPorts = new Map<string, number>();
 
@@ -169,7 +180,7 @@ export function registerWebUi(
     let publicUrl: string | undefined;
     if (endpoints.length > 0) {
       const taken = new Set([...servers.values(), ...startingPorts.values()].map((s) => (typeof s === "number" ? s : s.port)));
-      const endpoint = endpoints.find((candidate) => !taken.has(candidate.port));
+      const endpoint = endpoints.find((candidate) => !taken.has(candidate.port) && !busyPorts.has(candidate.port));
       if (!endpoint) {
         throw new Error(
           `All ${endpoints.length} Web UI endpoints of this workspace are in use: close a lease's views (Stop Web UI Servers) to open another's.`,
@@ -261,6 +272,25 @@ export function registerWebUi(
     });
   };
 
+  /**
+   * Start the lease's server; where its port turns out to be taken (another window of the same workspace has a
+   * server of its own on that endpoint), on the next endpoint, for as many as there are.
+   */
+  const startOnFreePort = async (client: string, leaseName: string): Promise<RunningServer> => {
+    for (;;) {
+      try {
+        return await start(client, leaseName);
+      } catch (err) {
+        const port = startingPorts.get(leaseName);
+        if (port === undefined || busyPorts.has(port) || !model.portTaken(err instanceof Error ? err.message : "")) {
+          throw err;
+        }
+        busyPorts.add(port);
+        jmp.log(`web UI: port ${port} is taken, trying the next endpoint`);
+      }
+    }
+  };
+
   /** The lease's server, started if this window has none. Concurrent requests share one start. */
   const ensure = (client: string, leaseName: string): Promise<RunningServer> => {
     const running = servers.get(leaseName);
@@ -269,7 +299,7 @@ export function registerWebUi(
     }
     let pending = starting.get(leaseName);
     if (!pending) {
-      pending = start(client, leaseName)
+      pending = startOnFreePort(client, leaseName)
         .then((server) => {
           servers.set(leaseName, server);
           return server;
@@ -304,30 +334,69 @@ export function registerWebUi(
     },
   });
 
-  const showPanel = (link: string, title: string, icon?: string): vscode.WebviewPanel => {
+  /** Put a view in a panel, and keep the panel for as long as it is open. */
+  const fill = (panel: vscode.WebviewPanel, link: string, state: model.PanelState): void => {
+    const name = model.panelIconName(state.icon);
+    panel.iconPath = {
+      light: vscode.Uri.joinPath(context.extensionUri, "media", "icons", `view-${name}-light.svg`),
+      dark: vscode.Uri.joinPath(context.extensionUri, "media", "icons", `view-${name}-dark.svg`),
+    };
+    panel.webview.html = buildPanelHtml({
+      link,
+      title: state.title,
+      nonce: randomBytes(16).toString("hex"),
+      state,
+    });
+    panels.set(link, panel);
+    panel.onDidDispose(() => {
+      if (panels.get(link) === panel) {
+        panels.delete(link);
+      }
+    });
+  };
+
+  const showPanel = (link: string, owner: LeaseOwner, title: string, icon?: string): vscode.WebviewPanel => {
     const open = panels.get(link);
     if (open) {
       open.reveal();
       return open;
     }
     const panel = vscode.window.createWebviewPanel(
-      "jumpstarter.webView",
+      PANEL_TYPE,
       title,
       // beside the editor; the views after the first are tabs of the same group, not a split each
       { viewColumn: [...panels.values()][0]?.viewColumn ?? vscode.ViewColumn.Beside, preserveFocus: false },
       // Kept when hidden: the view holds a live stream and a session, and a reload would drop both.
       { enableScripts: true, retainContextWhenHidden: true },
     );
-    const name = model.panelIconName(icon);
-    panel.iconPath = {
-      light: vscode.Uri.joinPath(context.extensionUri, "media", "icons", `view-${name}-light.svg`),
-      dark: vscode.Uri.joinPath(context.extensionUri, "media", "icons", `view-${name}-dark.svg`),
-    };
-    panel.webview.html = buildPanelHtml({ link, title, nonce: randomBytes(16).toString("hex") });
-    panels.set(link, panel);
-    panel.onDidDispose(() => panels.delete(link));
+    fill(panel, link, model.panelState(owner.client, owner.lease, link, title, icon));
     return panel;
   };
+
+  // A window that is loaded again (a browser reload of a workspace, a restart) gets its panels back from VS
+  // Code, empty: each is filled again from what it kept, once its lease's server is there (the one that still
+  // runs, or a new one).
+  context.subscriptions.push(
+    vscode.window.registerWebviewPanelSerializer(PANEL_TYPE, {
+      async deserializeWebviewPanel(panel: vscode.WebviewPanel, kept: unknown): Promise<void> {
+        const nonce = randomBytes(16).toString("hex");
+        const state = model.parsePanelState(kept);
+        panel.webview.options = { enableScripts: true };
+        if (!state) {
+          panel.webview.html = buildMessageHtml(nonce, "This Jumpstarter view cannot be opened again: open it from its lease.");
+          return;
+        }
+        panel.webview.html = buildMessageHtml(nonce, `Opening ${state.title} again…`);
+        try {
+          const server = await ensure(state.client, state.lease);
+          fill(panel, model.linkFor(server.url, state.route), state);
+        } catch (err) {
+          const why = err instanceof Error ? err.message : String(err);
+          panel.webview.html = buildMessageHtml(nonce, `${state.title} cannot be opened again: ${why}`);
+        }
+      },
+    }),
+  );
 
   /** Close the panels of a server that is gone: what they frame no longer answers. */
   const closePanelsOf = (serverUrl: string): void => {
@@ -391,6 +460,7 @@ export function registerWebUi(
     }
     showPanel(
       model.buildDriverViewLink(serverUrl, primary.driverPath, primary.view, "none"),
+      { client: ref.client, lease: ref.lease.name },
       `${primary.view.title}: ${primary.label}`,
       primary.view.icon,
     );
@@ -422,6 +492,7 @@ export function registerWebUi(
       }
       showPanel(
         model.buildWebUiLink(server.url, { tools, chrome: "none" }),
+        { client: ref.client, lease: ref.lease.name },
         ref.lease.exporter_name || ref.lease.name.slice(0, 8),
         "display",
       );
@@ -462,6 +533,7 @@ export function registerWebUi(
       }
       showPanel(
         model.buildDriverViewLink(server.url, n.descriptor.driverPath, view, "none"),
+        { client: n.client, lease: n.leaseName },
         `${view.title}: ${n.descriptor.label}`,
         view.icon,
       );

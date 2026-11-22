@@ -11,7 +11,11 @@ import {
   DEFAULT_TOOLS,
   normalizeFrameOrigins,
   parseEndpoints,
+  linkFor,
   normalizeTools,
+  panelState,
+  parsePanelState,
+  portTaken,
   panelIconName,
   primaryView,
   originOf,
@@ -21,7 +25,7 @@ import {
   tail,
   viewsForDriver,
 } from "../../features/webUi/model";
-import { buildPanelHtml, HOST_MESSAGE, HOST_TOKEN_SOURCES } from "../../features/webUi/panel";
+import { buildMessageHtml, buildPanelHtml, HOST_MESSAGE, HOST_TOKEN_SOURCES } from "../../features/webUi/panel";
 
 test("the server's address is read from its ready line, among other output", () => {
   const output = "INFO attaching to lease\njumpstarter-web: http://127.0.0.1:8123/\nINFO serving\n";
@@ -230,4 +234,49 @@ test("a lease opens with its display, or with its first tool where it has none",
   assert.equal(primaryView([appium, hmi]), hmi);
   assert.equal(primaryView([appium]), appium);
   assert.equal(primaryView([]), undefined);
+});
+
+test("a panel keeps what it is, without the server's address or token, and is made again from it", () => {
+  const link = "https://ws-1.che.example/?token=secret#/d/cuttlefish/hmi?view=hmi%2Fscreen%23cuttlefish%2Fhmi&only=hmi&chrome=none";
+  const state = panelState("homelab", "lease-1", link, "Screen: hmi", "display");
+  assert.deepEqual(state, {
+    client: "homelab",
+    lease: "lease-1",
+    route: "#/d/cuttlefish/hmi?view=hmi%2Fscreen%23cuttlefish%2Fhmi&only=hmi&chrome=none",
+    title: "Screen: hmi",
+    icon: "display",
+  });
+  assert.ok(!JSON.stringify(state).includes("secret"));
+  // the same view on whatever server the lease has when the window is loaded again
+  assert.equal(
+    linkFor("https://ws-2.che.example/?token=other", state.route),
+    "https://ws-2.che.example/?token=other#/d/cuttlefish/hmi?view=hmi%2Fscreen%23cuttlefish%2Fhmi&only=hmi&chrome=none",
+  );
+  assert.deepEqual(parsePanelState(JSON.parse(JSON.stringify(state))), state);
+});
+
+test("a kept state that is not one is not trusted", () => {
+  assert.equal(parsePanelState(undefined), undefined);
+  assert.equal(parsePanelState({ client: "c", lease: "l", title: "t", route: "javascript:alert(1)" }), undefined);
+  assert.equal(parsePanelState({ client: "c", lease: 3, title: "t", route: "#/d/" }), undefined);
+});
+
+test("the panel's document hands its state to VS Code, and a message panel frames nothing", () => {
+  const html = buildPanelHtml({
+    link: "http://127.0.0.1:1/#/d/",
+    nonce: "n",
+    title: "Screen",
+    state: { client: "c", lease: "l", route: "#/d/", title: "Screen" },
+  });
+  assert.ok(html.includes("acquireVsCodeApi().setState(config.state)"));
+  assert.ok(html.includes('"lease":"l"'));
+  const message = buildMessageHtml("n", "Opening <Screen> again…");
+  assert.ok(!message.includes("<iframe") && !message.includes("<script"));
+  assert.ok(!message.includes("<Screen>"));
+});
+
+test("a server that could not have its port says so in a way that is recognized", () => {
+  assert.ok(portTaken("Jumpstarter Web exited (1) before it listened.\nOSError: [Errno 98] Address already in use"));
+  assert.ok(portTaken("error while attempting to bind on address ('0.0.0.0', 7071): address already in use"));
+  assert.ok(!portTaken("Jumpstarter Web is not installed in this environment."));
 });
