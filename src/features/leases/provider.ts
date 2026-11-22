@@ -76,11 +76,22 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
 
   private state: RootState = { kind: "loading" };
   private readonly driverTreeCache = new Map<string, DriverTreeCacheEntry>();
+  /** Whether a driver client class has a view in Jumpstarter Web; see setWebViewLookup. */
+  private hasWebView: (driverClass: string, driverPath: readonly string[]) => boolean = () => false;
 
   constructor(
     private readonly jmp: JmpService,
     private readonly pendingLeases?: PendingLeaseStore,
   ) {}
+
+  /**
+   * Tell the tree which driver clients have a view of their own in
+   * Jumpstarter Web, so those rows can offer to open it. Re-renders.
+   */
+  setWebViewLookup(lookup: (driverClass: string, driverPath: readonly string[]) => boolean): void {
+    this.hasWebView = lookup;
+    this.changeEmitter.fire(undefined);
+  }
 
   // -- state transitions (called by the feature's poller tick) --------------
 
@@ -404,7 +415,7 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
     item.id = `jumpstarter.driver/${node.leaseName}/${d.id}`;
     item.description = d.description;
     item.tooltip = d.tooltip;
-    item.contextValue = "jumpstarterDriver";
+    item.contextValue = this.hasWebView(d.driverClass, d.driverPath) ? "jumpstarterDriver-web" : "jumpstarterDriver";
     item.iconPath = new vscode.ThemeIcon("circuit-board");
     return item;
   }

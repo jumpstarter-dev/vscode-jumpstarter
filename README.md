@@ -177,6 +177,35 @@ icon.
   no controller in that path, so it is a session rather than a lease and does
   not appear in this list.
 
+### Screens and tools from Jumpstarter Web
+
+With [Jumpstarter Web](https://github.com/jumpstarter-dev/jumpstarter-web)
+(`jumpstarter-web`, optional) installed in the same environment as `jmp`, the
+parts of a lease VS Code has no view for open beside the editor:
+
+- A driver whose client an installed Jumpstarter Web plugin has a view for
+  (a display's **Screen**, the **Appium Inspector**, a serial or SSH console)
+  shows an **Open View** button on its row in the Leases view. It opens that
+  one view, for that one driver.
+- **Open Screen and Tools** on a lease opens the lease's screen and Appium
+  Inspector together (`jumpstarter.webUi.tools` says which).
+- **Open Full Web UI in Browser** opens the whole workbench.
+
+One `jumpstarter-web serve` is started per lease, inside the lease session
+(`jmp shell --lease L -- jumpstarter-web serve`), the first time a view is
+asked for, and reused after. It listens on loopback only and stops with the
+window, with the lease, or with **Jumpstarter: Stop Web UI Servers**. In a
+remote window or an Eclipse Che workspace the port is reached through the
+address VS Code forwards it to, and the server is told that address and asks
+for its per-launch token (not verified on a real Che yet).
+
+Views open in VS Code's built-in browser. Where that is the older Simple
+Browser (a frame), Jumpstarter Web refuses to be framed and the panel stays
+empty: set `jumpstarter.webUi.openIn` to `browser` there.
+
+Which drivers have a view is read from `jumpstarter-web plugins -o json`; with
+a Jumpstarter Web that predates that command, use the lease-level commands.
+
 ### Administration view
 
 Appears only when this machine can actually administer a cluster: a kubeconfig
@@ -302,6 +331,9 @@ managed by the extension.
 | `jumpstarter.kubectlPath` | `"kubectl"` | Executable used for manifest apply/validation when experimental `jmp admin apply` is unavailable. |
 | `jumpstarter.experimentalCliFeatures` | `false` | Enable CLI APIs still on `ide-cli-integration` (driver schemas, driver browsing, exporter-set administration, and `jmp admin apply` instead of `kubectl`). |
 | `jumpstarter.pollIntervalSeconds` | `15` | How often (in seconds) the Jumpstarter views poll the controller for exporters and leases (minimum 5). The Administration view polls at half this rate, and never faster than every 30s. |
+| `jumpstarter.webUi.tools` | `["hmi", "appium-inspector"]` | What **Open Screen and Tools** shows of a lease: Jumpstarter Web plugin ids, view ids (`hmi/screen`) or kinds of view (`@display`, `@terminal`, `@tool`). Empty shows the whole workbench. |
+| `jumpstarter.webUi.openIn` | `"panel"` | Where a lease's screen and tools, and a driver's view, open: `panel` (beside the editor) or `browser` (the system browser). |
+| `jumpstarter.webUi.path` | `""` | Path to a `jumpstarter-web` executable. Empty takes it from the environment `jmp` runs from. |
 | `jumpstarter.admin.namespace` | `""` | Namespace the Administration view reads. Empty follows the current client config's namespace. |
 | `jumpstarter.admin.kubeconfig` | `""` | Kubeconfig for cluster administration. Empty uses the usual `KUBECONFIG` / `~/.kube/config` resolution. |
 | `jumpstarter.admin.context` | `""` | Kubeconfig context for cluster administration. Empty uses the current context. |

@@ -465,7 +465,21 @@ function respond() {
   return false;
 }
 
-if (!respond()) {
+// `jmp shell ... -- jumpstarter-web serve ...`: the one long-running thing the
+// extension spawns itself. Announce an address the way the real server does
+// and stay up until told to stop. JMP_FAKE_WEB=missing models an environment
+// without the package.
+if (startsWith("shell") && has("--", "serve")) {
+  if (process.env.JMP_FAKE_WEB === "missing") {
+    process.stderr.write("/usr/bin/python: No module named jumpstarter_web\n");
+    process.exit(1);
+  }
+  const publicUrl = valueOf("--public-url");
+  const base = publicUrl ?? `http://127.0.0.1:${valueOf("--port")}`;
+  process.stdout.write(`jumpstarter-web: ${base}/${publicUrl ? "?token=fake-token" : ""}\n`);
+  process.on("SIGTERM", () => process.exit(0));
+  setInterval(() => {}, 1 << 30);
+} else if (!respond()) {
   process.stderr.write(`Error: fake jmp does not know '${argv.join(" ")}'\n`);
   process.exit(2);
 }

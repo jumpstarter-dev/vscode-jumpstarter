@@ -8,6 +8,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Added
 
+- Jumpstarter Web: open a driver's own view (screen, Appium Inspector,
+  console) in a panel beside the editor from its row in the Leases view, a
+  lease's screen and tools together, or the full web UI in the browser. One
+  `jumpstarter-web serve` per lease, started inside the lease session on
+  demand.
+
 - Jumpstarter activity bar container with **Clients**, **Exporters** and
   **Leases** views, all driven by the `jmp` CLI resolved from the active
   Python environment (or `jumpstarter.jmpPath`).

@@ -20,7 +20,9 @@ export default defineConfig({
   // Every other installed extension is off: these tests are about this one,
   // and a Python extension prompting for an interpreter would hang them. The
   // extension under development is loaded separately and stays enabled.
-  launchArgs: ["--disable-extensions"],
+  // The user data directory holds a socket whose path has a length limit a
+  // deep checkout exceeds; keep it under the scratch root.
+  launchArgs: ["--disable-extensions", "--user-data-dir", join(ROOT, "user-data")],
   env: {
     JMP_CLIENT_CONFIG_HOME: join(ROOT, "config"),
     JMP_FAKE_LOG: join(ROOT, "calls.log"),

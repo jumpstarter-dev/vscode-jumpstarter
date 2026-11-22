@@ -1,0 +1,234 @@
+/**
+ * Pure logic for opening a lease in Jumpstarter Web (no vscode imports).
+ *
+ * Jumpstarter Web (`jumpstarter-web`, a separate optional package) serves a
+ * lease's screen, Appium Inspector and tool windows as a web page. The
+ * extension starts its `serve` command inside the lease session and opens a
+ * deep link to it, narrowed to the views that have no native VS Code
+ * counterpart; terminals, the driver tree and lease actions stay native.
+ */
+
+import * as path from "path";
+
+/** A view a plugin of Jumpstarter Web has for a kind of driver client. */
+export interface WebView {
+  /** The id a link names it by: `<plugin id>/<contribution id>`. */
+  id: string;
+  /** The plugin that contributes it. */
+  plugin: string;
+  /** What its tab is called, e.g. "Screen". */
+  title: string;
+  /** The driver client classes it is a view of. */
+  matches: string[];
+  /** When set, only drivers with one of these names (the last segment of their path) have it. */
+  names?: string[];
+}
+
+/**
+ * The main views of the installed, loadable plugins, from
+ * `jumpstarter-web plugins -o json`. Tool windows and toolbar items are left
+ * out: they belong to a workbench, not to a panel of their own. Anything
+ * malformed is skipped rather than trusted.
+ */
+export function parsePluginViews(stdout: string): WebView[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    return [];
+  }
+  const plugins = (parsed as { plugins?: unknown })?.plugins;
+  if (!Array.isArray(plugins)) {
+    return [];
+  }
+  const views: WebView[] = [];
+  for (const plugin of plugins as Record<string, unknown>[]) {
+    if (!plugin || plugin.compatible === false || typeof plugin.id !== "string" || !Array.isArray(plugin.views)) {
+      continue;
+    }
+    for (const view of plugin.views as Record<string, unknown>[]) {
+      if (!view || view.type !== "main" || typeof view.id !== "string" || !ENTRY.test(view.id)) {
+        continue;
+      }
+      // Conditions that cannot be checked from the CLI's driver tree (every class of a chain, a driver's
+      // labels): better not to offer the view than to offer one the page will not show.
+      if (view.all !== undefined || view.labels !== undefined) {
+        continue;
+      }
+      const strings = (value: unknown): string[] =>
+        Array.isArray(value) ? value.filter((m): m is string => typeof m === "string") : [];
+      const names = strings(view.names);
+      views.push({
+        id: view.id,
+        plugin: plugin.id,
+        title: typeof view.title === "string" && view.title ? view.title : view.id,
+        matches: strings(view.matches),
+        ...(names.length > 0 ? { names } : {}),
+      });
+    }
+  }
+  return views;
+}
+
+/**
+ * The views there are for a driver, by its client class.
+ *
+ * Only the class the CLI reports is compared. A client that subclasses a
+ * matched one is therefore not recognized here, though the page itself (which
+ * sees the whole class chain) shows its view.
+ */
+export function viewsForDriver(
+  driverClass: string,
+  driverPath: readonly string[],
+  views: readonly WebView[],
+): WebView[] {
+  const name = driverPath[driverPath.length - 1] ?? "";
+  return views.filter(
+    (view) => view.matches.includes(driverClass) && (view.names === undefined || view.names.includes(name)),
+  );
+}
+
+/** What `jumpstarter-web serve` prints once it listens. */
+const READY = /^jumpstarter-web: (https?:\/\/\S+)\s*$/m;
+
+/** One entry of the tools list: an extension id, an instance of one, a plugin id, or a kind of main view. */
+const ENTRY = /^(?:@(?:display|terminal|tool)|[A-Za-z0-9._\-/#]{1,200})$/;
+
+/** What the focused link shows when the setting is left alone. */
+export const DEFAULT_TOOLS: readonly string[] = ["hmi", "appium-inspector"];
+
+/** How long `serve` may take to print its address (it attaches to the lease first). */
+export const START_TIMEOUT_MS = 60_000;
+
+/** The address the server announced, or undefined while it has not listened yet. */
+export function parseReadyUrl(output: string): string | undefined {
+  return READY.exec(output)?.[1];
+}
+
+/**
+ * The tools setting as a clean list: trimmed, deduplicated, and without
+ * entries the page would not understand (they would otherwise end up in a URL).
+ */
+export function normalizeTools(setting: unknown): string[] {
+  if (!Array.isArray(setting)) {
+    return [...DEFAULT_TOOLS];
+  }
+  const seen = new Set<string>();
+  for (const value of setting) {
+    if (typeof value !== "string") {
+      continue;
+    }
+    const entry = value.trim();
+    if (ENTRY.test(entry)) {
+      seen.add(entry);
+    }
+  }
+  return [...seen];
+}
+
+export interface WebUiLinkOptions {
+  /** Show only these extensions (`only=`). Empty or absent: the full workbench. */
+  tools?: readonly string[];
+  /** Show the device alone, without the page's own navigation (`chrome=minimal`). */
+  minimal?: boolean;
+}
+
+/**
+ * The link to open: the server's address plus a device deep link in the hash.
+ *
+ * The address may carry a one-time `?token=` in its query; that stays where it
+ * is. Nothing secret is ever put in the hash.
+ */
+export function buildWebUiLink(serverUrl: string, options: WebUiLinkOptions = {}): string {
+  const url = new URL(serverUrl);
+  const parts: string[] = [];
+  const tools = options.tools ?? [];
+  if (tools.length > 0) {
+    parts.push(`only=${tools.map((entry) => encodeURIComponent(entry)).join(",")}`);
+  }
+  if (options.minimal) {
+    parts.push("chrome=minimal");
+  }
+  url.hash = parts.length > 0 ? `#/d/?${parts.join("&")}` : "#/d/";
+  return url.toString();
+}
+
+/**
+ * The link to one driver's view, alone: the driver's page, that view in
+ * front, and only its plugin's parts around it (an Inspector keeps its panel;
+ * the lease's other screens and terminals are left out).
+ */
+export function buildDriverViewLink(serverUrl: string, driverPath: readonly string[], view: WebView): string {
+  const url = new URL(serverUrl);
+  const path = driverPath.map((segment) => encodeURIComponent(segment)).join("/");
+  const instance = encodeURIComponent(`${view.id}#${driverPath.join("/")}`);
+  url.hash = `#/d/${path}?view=${instance}&only=${encodeURIComponent(view.plugin)}&chrome=minimal`;
+  return url.toString();
+}
+
+export interface ServeOptions {
+  /** The loopback port to listen on. */
+  port: number;
+  /**
+   * The origin the browser reaches that port through when it is not loopback
+   * itself (a forwarded port in a remote window, a Che endpoint).
+   */
+  publicUrl?: string;
+}
+
+/**
+ * Arguments for `jumpstarter-web serve`, after the executable.
+ *
+ * With a public URL the server is reached from beyond loopback, so it asks for
+ * its per-launch token. Terminals stay on: a serial or SSH console is a view
+ * of a driver like the screen is, and the links opened here leave the page's
+ * own `jmp shell` tab out.
+ */
+export function buildServeArgs(options: ServeOptions): string[] {
+  const args = ["serve", "--host", "127.0.0.1", "--port", String(options.port)];
+  if (options.publicUrl) {
+    args.push("--public-url", options.publicUrl, "--auth", "token");
+  }
+  return args;
+}
+
+/**
+ * How to run `jumpstarter-web`, given how `jmp` is run.
+ *
+ * - An explicit path setting wins.
+ * - `<python> -m jumpstarter_cli` mode: the same interpreter runs the module,
+ *   so the web UI always comes from the environment jmp came from.
+ * - A `jmp` executable: the script that sits beside it (the same environment's
+ *   bin directory), found by the caller; else the bare name, left to PATH.
+ */
+export function resolveWebCommand(
+  jmp: { command: string; prefixArgs: readonly string[] },
+  configuredPath: string,
+  exists: (file: string) => boolean,
+): string[] {
+  const configured = configuredPath.trim();
+  if (configured.length > 0) {
+    return [configured];
+  }
+  if (jmp.prefixArgs.length > 0) {
+    return [jmp.command, "-m", "jumpstarter_web"];
+  }
+  const beside = path.join(path.dirname(jmp.command), "jumpstarter-web");
+  return [exists(beside) ? beside : "jumpstarter-web"];
+}
+
+/** The origin (`scheme://host[:port]`) of a URL, as `--public-url` wants it. */
+export function originOf(url: string): string {
+  return new URL(url).origin;
+}
+
+/** Whether a URL points at this machine's loopback interface. */
+export function isLoopback(url: string): boolean {
+  const host = new URL(url).hostname;
+  return host === "127.0.0.1" || host === "localhost" || host === "[::1]" || host === "::1";
+}
+
+/** The last lines of a process's output, for an error message. */
+export function tail(output: string, lines = 8): string {
+  return output.trim().split("\n").slice(-lines).join("\n");
+}

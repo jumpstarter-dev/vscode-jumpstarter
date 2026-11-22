@@ -34,7 +34,7 @@ const SETTLE_POLL_MS = 1_000;
 export function registerLeases(
   context: vscode.ExtensionContext,
   services: Services,
-): vscode.TreeDataProvider<unknown> {
+): LeasesTreeProvider {
   const { jmp } = services;
   const provider = new LeasesTreeProvider(jmp, services.pendingLeases);
   context.subscriptions.push(provider);

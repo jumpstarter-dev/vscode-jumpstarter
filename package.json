@@ -196,6 +196,29 @@
         "icon": "$(terminal)"
       },
       {
+        "command": "jumpstarter.leases.openWebUi",
+        "title": "Open Screen and Tools",
+        "category": "Jumpstarter",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "jumpstarter.leases.openDriverView",
+        "title": "Open View",
+        "category": "Jumpstarter",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "jumpstarter.leases.openFullWebUi",
+        "title": "Open Full Web UI in Browser",
+        "category": "Jumpstarter",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "jumpstarter.webUi.stop",
+        "title": "Stop Web UI Servers",
+        "category": "Jumpstarter"
+      },
+      {
         "command": "jumpstarter.leases.runCurrentFile",
         "title": "Run Current File in Lease",
         "category": "Jumpstarter",
@@ -324,6 +347,14 @@
           "when": "false"
         },
         {
+          "command": "jumpstarter.leases.openWebUi",
+          "when": "false"
+        },
+        {
+          "command": "jumpstarter.leases.openFullWebUi",
+          "when": "false"
+        },
+        {
           "command": "jumpstarter.leases.runCurrentFile",
           "when": "false"
         },
@@ -386,6 +417,10 @@
         {
           "command": "jumpstarter.validateManifest",
           "when": "jumpstarter.adminAvailable && jumpstarter.canApplyManifest"
+        },
+        {
+          "command": "jumpstarter.leases.openDriverView",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -552,9 +587,24 @@
           "group": "inline@1"
         },
         {
+          "command": "jumpstarter.leases.openWebUi",
+          "when": "view == jumpstarter.leases && viewItem =~ /^jumpstarterLease-inUse/",
+          "group": "inline@2"
+        },
+        {
+          "command": "jumpstarter.leases.openWebUi",
+          "when": "view == jumpstarter.leases && viewItem =~ /^jumpstarterLease-inUse/",
+          "group": "1_run@2"
+        },
+        {
+          "command": "jumpstarter.leases.openFullWebUi",
+          "when": "view == jumpstarter.leases && viewItem =~ /^jumpstarterLease-inUse/",
+          "group": "1_run@3"
+        },
+        {
           "command": "jumpstarter.leases.end",
           "when": "view == jumpstarter.leases && viewItem =~ /^jumpstarterLease-(inUse|waiting)/",
-          "group": "inline@2"
+          "group": "inline@3"
         },
         {
           "command": "jumpstarter.leases.runCurrentFile",
@@ -610,6 +660,16 @@
           "command": "jumpstarter.admin.importExporter",
           "when": "view == jumpstarter.admin && viewItem == admin-exporter",
           "group": "1_config@1"
+        },
+        {
+          "command": "jumpstarter.leases.openDriverView",
+          "when": "view == jumpstarter.leases && viewItem == jumpstarterDriver-web",
+          "group": "inline@1"
+        },
+        {
+          "command": "jumpstarter.leases.openDriverView",
+          "when": "view == jumpstarter.leases && viewItem == jumpstarterDriver-web",
+          "group": "1_run@1"
         }
       ],
       "editor/title": [
@@ -675,6 +735,35 @@
           "default": 15,
           "minimum": 5,
           "description": "How often (in seconds) the Jumpstarter views poll the controller for exporters and leases."
+        },
+        "jumpstarter.webUi.tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "hmi",
+            "appium-inspector"
+          ],
+          "markdownDescription": "What **Open Screen and Tools in Web UI** shows of a lease: plugin ids (`hmi`, `appium-inspector`), extension ids (`hmi/screen`) or kinds of view (`@display`, `@terminal`, `@tool`) of [Jumpstarter Web](https://github.com/jumpstarter-dev/jumpstarter-web). Empty shows the whole workbench."
+        },
+        "jumpstarter.webUi.openIn": {
+          "type": "string",
+          "enum": [
+            "panel",
+            "browser"
+          ],
+          "default": "panel",
+          "enumDescriptions": [
+            "A panel beside the editor, in VS Code's own browser.",
+            "The system browser."
+          ],
+          "markdownDescription": "Where a lease's screen and tools, and a driver's view, open. The full Web UI always opens in the system browser."
+        },
+        "jumpstarter.webUi.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to a `jumpstarter-web` executable. When empty, it is taken from the environment `jmp` runs from."
         }
       }
     }
@@ -692,6 +781,7 @@
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vscode-test",
+    "test:real": "pnpm run compile-tests && pnpm run compile && vscode-test --config .vscode-test.real.mjs",
     "test:unit": "pnpm run compile-tests && node --test \"out/test/unit/**/*.test.js\"",
     "package:vsix": "vsce package --no-dependencies"
   },
@@ -701,8 +791,8 @@
     "@types/vscode": "^1.98.0",
     "@typescript-eslint/eslint-plugin": "^8.25.0",
     "@typescript-eslint/parser": "^8.25.0",
-    "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.4.1",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.3.2",
     "esbuild": "^0.25.0",
     "eslint": "^9.21.0",

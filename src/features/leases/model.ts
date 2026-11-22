@@ -59,6 +59,10 @@ export interface DriverNodeDescriptor {
   description: string;
   tooltip: string;
   commands: CommandDescriptor[];
+  /** The driver's path in the session, root first, e.g. ["cuttlefish", "hmi"]. */
+  driverPath: string[];
+  /** The full name of the driver's client class. */
+  driverClass: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -318,6 +322,8 @@ export function buildDriverNodes(driverTree: LeaseDriverTree): DriverNodeDescrip
       description: tailOfPath(driver.class),
       tooltip: tooltipLines.join("\n"),
       commands,
+      driverPath: [...(driver.driver_path ?? [])],
+      driverClass: driver.class,
     };
   });
 }

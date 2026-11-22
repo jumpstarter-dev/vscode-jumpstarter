@@ -9,6 +9,7 @@ import { registerDetails } from "./features/details";
 import { registerClients } from "./features/clients";
 import { registerExporters } from "./features/exporters";
 import { registerLeases } from "./features/leases";
+import { registerWebUi, WebUiApi } from "./features/webUi";
 import { registerTesting } from "./features/testing";
 import { registerSchemas } from "./features/schemas";
 import { registerAdmin, resolveAdminOptions } from "./features/admin";
@@ -26,6 +27,8 @@ export interface JumpstarterApi {
   services: Services;
   /** The tree providers behind the four views, by view name. */
   trees: Record<"clients" | "exporters" | "leases" | "admin", vscode.TreeDataProvider<unknown>>;
+  /** The Jumpstarter Web servers this window started. */
+  webUi: WebUiApi;
   /** Re-read every view from the CLI and settle. */
   refreshAll(): Promise<void>;
 }
@@ -92,6 +95,10 @@ export function activate(context: vscode.ExtensionContext): JumpstarterApi {
   // shell / run-in-lease terminals, extend/end lease)
   const leasesTree = registerLeases(context, services);
 
+  // FEATURE REGISTRATION: web UI (open a lease's screen and tools in
+  // Jumpstarter Web, served from inside the lease session)
+  const webUi = registerWebUi(context, services, leasesTree);
+
   // FEATURE REGISTRATION: testing (pin a lease for test runs via JMP_LEASE)
   registerTesting(context, services);
 
@@ -115,6 +122,7 @@ export function activate(context: vscode.ExtensionContext): JumpstarterApi {
 
   return {
     services,
+    webUi,
     trees: {
       clients: clientsTree,
       exporters: exportersTree,
