@@ -171,8 +171,14 @@ export class JmpService implements vscode.Disposable {
     }
   }
 
+  /** How many probes have started; see probe(). */
+  private probes = 0;
+
   /** Probe `jmp version -o json` and recompute capability flags. */
   async probe(): Promise<JmpAvailability> {
+    // Probes can overlap (activation, a settings change, an interpreter change) and one of a slow CLI can end
+    // after one that started later: only the answer of the latest probe says what is available now.
+    const mine = ++this.probes;
     let result: JmpAvailability;
     try {
       const invocation = await this.getInvocation();
@@ -193,6 +199,9 @@ export class JmpService implements vscode.Disposable {
       } else {
         result = { kind: "error", error: jmpErr };
       }
+    }
+    if (mine !== this.probes) {
+      return this.availability ?? result;
     }
     this.availability = result;
     this.log(

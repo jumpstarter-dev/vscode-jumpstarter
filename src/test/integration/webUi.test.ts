@@ -151,7 +151,14 @@ suite("web UI", () => {
   });
 
   test("a driver with a plugin view offers it; one without does not", async () => {
-    const items = await driverItems(api, leaseNode);
+    // The driver tree is cached per lease, and a suite before this one may have left it the answer of a CLI
+    // without driver browsing: read it again.
+    await vscode.commands.executeCommand("jumpstarter.leases.refreshDevices", leaseNode);
+    let items = new Map<string, vscode.TreeItem>();
+    await waitFor("the lease's drivers", async () => {
+      items = await driverItems(api, leaseNode);
+      return items.has("power");
+    });
     assert.equal(items.get("power")?.contextValue, "jumpstarterDriver-web");
     // Its only matching plugin cannot be loaded, so there is nothing to open.
     assert.equal(items.get("storage")?.contextValue, "jumpstarterDriver");
