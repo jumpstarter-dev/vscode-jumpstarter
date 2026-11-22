@@ -15,6 +15,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { promises as fs } from "fs";
+import * as fsSync from "fs";
 import { spawn } from "child_process";
 import { PythonExtension } from "@vscode/python-extension";
 import * as protocol from "./jmpProtocol";
@@ -221,6 +222,25 @@ export class JmpService implements vscode.Disposable {
     }
     const python = await this.pythonPathOrEmpty();
     if (!python) {
+      // No interpreter to ask (the Python extension is not there, or has none selected): a `jmp` on the PATH of
+      // this machine is the next best thing, and all a container that has Jumpstarter installed needs.
+      const onPath = protocol.findOnPath(
+        process.platform === "win32" ? "jmp.exe" : "jmp",
+        process.env.PATH,
+        (file) => {
+          try {
+            fsSync.accessSync(file, fsSync.constants.X_OK);
+            return fsSync.statSync(file).isFile();
+          } catch {
+            return false;
+          }
+        },
+        path.delimiter,
+        path.sep,
+      );
+      if (onPath) {
+        return { command: onPath, prefixArgs: [] };
+      }
       throw new JmpError(
         "no-python",
         "No active Python interpreter found (is the Python extension installed?)",

@@ -644,3 +644,28 @@ export function resolveConfigHome(
   }
   return path.join(homedir, ".config", "jumpstarter");
 }
+
+/**
+ * The `jmp` executable a PATH leads to, or undefined. For an environment that
+ * has no Python extension to ask (a container that simply has `jmp`
+ * installed): the first directory of PATH that has the executable wins, as in
+ * a shell.
+ */
+export function findOnPath(
+  name: string,
+  pathValue: string | undefined,
+  isExecutable: (file: string) => boolean,
+  delimiter = ":",
+  separator = "/",
+): string | undefined {
+  for (const directory of (pathValue ?? "").split(delimiter)) {
+    if (directory.length === 0) {
+      continue;
+    }
+    const candidate = directory.endsWith(separator) ? `${directory}${name}` : `${directory}${separator}${name}`;
+    if (isExecutable(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}

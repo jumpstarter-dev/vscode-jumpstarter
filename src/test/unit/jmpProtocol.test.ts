@@ -7,6 +7,7 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import {
   buildAdminApplyArgs,
+  findOnPath,
   buildAdminGetArgs,
   buildAdminImportArgs,
   buildAdminOptionArgs,
@@ -464,4 +465,13 @@ test("isValidAddress: host:port only", () => {
   for (const bad of ["", "localhost", "localhost:", ":8082", "localhost:0", "host:70000", "h:abc"]) {
     assert.equal(isValidAddress(bad), false, bad);
   }
+});
+
+test("findOnPath: the first directory of PATH that has the executable wins", () => {
+  const has = new Set(["/opt/venv/bin/jmp", "/usr/bin/jmp"]);
+  const isExecutable = (file: string): boolean => has.has(file);
+  assert.equal(findOnPath("jmp", "/usr/local/bin:/opt/venv/bin:/usr/bin", isExecutable), "/opt/venv/bin/jmp");
+  assert.equal(findOnPath("jmp", "/usr/local/bin::/usr/bin/", isExecutable), "/usr/bin/jmp");
+  assert.equal(findOnPath("jmp", "/usr/local/bin", isExecutable), undefined);
+  assert.equal(findOnPath("jmp", undefined, isExecutable), undefined);
 });
