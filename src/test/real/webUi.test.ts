@@ -143,4 +143,32 @@ suite("web UI, for real", () => {
     await new Promise((resolve) => setTimeout(resolve, 4000));
     console.log(`tab after load: "${tab.label}"`);
   });
+
+  // For looking at it: JMP_REAL_SHOW=hmi,appium opens those drivers' views for real and keeps the window up
+  // for JMP_REAL_HOLD seconds; JMP_REAL_THEME picks the colour theme the window has meanwhile.
+  test("show driver views and hold the window", async function () {
+    const show = (process.env.JMP_REAL_SHOW ?? "").split(",").filter((name) => name.length > 0);
+    if (show.length === 0) {
+      this.skip();
+    }
+    this.timeout(600_000);
+    restore();
+    restore = () => {};
+    if (process.env.JMP_REAL_THEME) {
+      await vscode.workspace
+        .getConfiguration("workbench")
+        .update("colorTheme", process.env.JMP_REAL_THEME, vscode.ConfigurationTarget.Global);
+    }
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    await vscode.commands.executeCommand("workbench.view.extension.jumpstarter");
+    for (const node of (await api.trees.leases.getChildren(leaseNode)) ?? []) {
+      const item = await api.trees.leases.getTreeItem(node);
+      if (show.includes(String(item.label))) {
+        await vscode.commands.executeCommand("jumpstarter.leases.openDriverView", node);
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+    }
+    console.log("holding the window");
+    await new Promise((resolve) => setTimeout(resolve, Number(process.env.JMP_REAL_HOLD ?? "60") * 1000));
+  });
 });

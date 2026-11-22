@@ -21,6 +21,12 @@ mkdirSync(ROOT, { recursive: true });
 export default defineConfig({
   files: "out/test/real/**/*.test.js",
   workspaceFolder: "./src/test/fixtures/workspace",
-  launchArgs: ["--disable-extensions", "--user-data-dir", join(ROOT, "user-data")],
+  launchArgs: [
+    "--disable-extensions",
+    "--user-data-dir",
+    join(ROOT, "user-data"),
+    // JMP_REAL_DEBUG_PORT: let a script outside take pictures of the window (Chrome DevTools Protocol).
+    ...(process.env.JMP_REAL_DEBUG_PORT ? [`--remote-debugging-port=${process.env.JMP_REAL_DEBUG_PORT}`] : []),
+  ],
   mocha: { ui: "tdd", timeout: 180_000 },
 });
