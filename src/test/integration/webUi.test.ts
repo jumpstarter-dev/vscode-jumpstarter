@@ -77,14 +77,17 @@ suite("web UI", () => {
     clearCliCalls();
   });
 
-  test("the screen and tools open narrowed, served from inside the lease", async () => {
+  test("the lease's views open each in a tab of its own, served from inside the lease", async () => {
     await vscode.commands.executeCommand("jumpstarter.leases.openWebUi", leaseNode);
 
     assert.deepEqual(errors, []);
-    // Beside the editor, not in a browser window.
+    // Beside the editor, not in a browser window: the fake lease has one driver with a view (its power meter).
     assert.deepEqual(opened, []);
     assert.equal(shown().length, 1);
-    assert.match(shown()[0], /^http:\/\/127\.0\.0\.1:\d+\/#\/d\/\?only=power&chrome=none$/);
+    assert.match(
+      shown()[0],
+      /^http:\/\/127\.0\.0\.1:\d+\/#\/d\/power\?view=power%2Fmeter%23power&only=power&chrome=none$/,
+    );
 
     const [argv] = callsMatching("shell");
     const lease = (leaseNode as { lease: { name: string } }).lease.name;
@@ -108,7 +111,7 @@ suite("web UI", () => {
     assert.match(opened[0], /^http:\/\/127\.0\.0\.1:\d+\/#\/d\/$/);
   });
 
-  test("the tools setting decides what the focused link shows", async () => {
+  test("a tools setting shows what it names together, in one tab", async () => {
     const config = vscode.workspace.getConfiguration("jumpstarter");
     await config.update("webUi.tools", ["hmi/screen"], vscode.ConfigurationTarget.Global);
     try {

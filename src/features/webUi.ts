@@ -31,6 +31,8 @@ import { createServer } from "net";
 import { Services } from "../services";
 import { buildShellArgs, shellQuote } from "../services/jmpProtocol";
 import { Lease } from "../types";
+import { buildDriverNodes } from "./leases/model";
+import type { DriverNodeDescriptor } from "./leases/model";
 import type { DriverNode, LeasesTreeProvider } from "./leases/provider";
 import * as model from "./webUi/model";
 import { buildPanelHtml } from "./webUi/panel";
@@ -303,16 +305,17 @@ export function registerWebUi(
     },
   });
 
-  const showPanel = (link: string, title: string, icon?: string): void => {
+  const showPanel = (link: string, title: string, icon?: string): vscode.WebviewPanel => {
     const open = panels.get(link);
     if (open) {
       open.reveal();
-      return;
+      return open;
     }
     const panel = vscode.window.createWebviewPanel(
       "jumpstarter.webView",
       title,
-      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: false },
+      // beside the editor; the views after the first are tabs of the same group, not a split each
+      { viewColumn: [...panels.values()][0]?.viewColumn ?? vscode.ViewColumn.Beside, preserveFocus: false },
       // Kept when hidden: the view holds a live stream and a session, and a reload would drop both.
       { enableScripts: true, retainContextWhenHidden: true },
     );
@@ -324,6 +327,14 @@ export function registerWebUi(
     panel.webview.html = buildPanelHtml({ link, title, nonce: randomBytes(16).toString("hex") });
     panels.set(link, panel);
     panel.onDidDispose(() => panels.delete(link));
+    return panel;
+  };
+
+  /** Wait (briefly) until a new panel knows which editor group it is in: the next one is a tab of that group. */
+  const placed = async (panel: vscode.WebviewPanel): Promise<void> => {
+    for (let i = 0; i < 20 && panel.viewColumn === undefined; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
   };
 
   /** Close the panels of a server that is gone: what they frame no longer answers. */
@@ -363,6 +374,34 @@ export function registerWebUi(
     void vscode.window.showErrorMessage(`Jumpstarter: ${err instanceof Error ? err.message : String(err)}`);
   };
 
+  /**
+   * A panel for every centre view the lease's drivers have; how many there were. None when the driver tree
+   * cannot be read (a CLI without driver browsing) or no driver has a view: the caller then shows the lease's
+   * views together.
+   */
+  const openDriverPanels = async (ref: LeaseRef, serverUrl: string): Promise<number> => {
+    let drivers: DriverNodeDescriptor[];
+    try {
+      drivers = buildDriverNodes((await jmp.describeLeaseWithDrivers(ref.client, ref.lease.name)).driver_tree);
+    } catch {
+      return 0;
+    }
+    let count = 0;
+    for (const driver of drivers) {
+      for (const view of model.viewsForDriver(driver.driverClass, driver.driverPath, views)) {
+        await placed(
+          showPanel(
+            model.buildDriverViewLink(serverUrl, driver.driverPath, view, "none"),
+            `${view.title}: ${driver.label}`,
+            view.icon,
+          ),
+        );
+        count += 1;
+      }
+    }
+    return count;
+  };
+
   const open = async (node: unknown, focused: boolean): Promise<void> => {
     const ref = leaseOf(node);
     if (!ref) {
@@ -375,10 +414,16 @@ export function registerWebUi(
         await showInBrowser(model.buildWebUiLink(server.url));
         return;
       }
-      const tools = model.normalizeTools(
-        vscode.workspace.getConfiguration("jumpstarter").get("webUi.tools"),
-        views,
-      );
+      const setting = vscode.workspace.getConfiguration("jumpstarter").get("webUi.tools");
+      const tools = model.normalizeTools(setting, views);
+      if (preferred() === "panel" && !Array.isArray(setting)) {
+        // Each view of the lease's drivers in a tab of its own, as an editor has its files: a view switcher
+        // inside one tab would be a second row of tabs.
+        const opened = await openDriverPanels(ref, server.url);
+        if (opened > 0) {
+          return;
+        }
+      }
       if (preferred() === "browser") {
         await showInBrowser(model.buildWebUiLink(server.url, tools.length > 0 ? { tools, chrome: "minimal" } : {}));
         return;

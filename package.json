@@ -745,7 +745,7 @@
             "type": "string"
           },
           "default": null,
-          "markdownDescription": "What **Open Screen and Tools** shows of a lease, as entries of [Jumpstarter Web](https://github.com/jumpstarter-dev/jumpstarter-web): plugin ids (`hmi`), view ids (`hmi/screen`) or kinds of centre view (`@display`, `@tool`, `@terminal`). Left unset, it is every installed plugin that has a display or a tool to show in the centre; terminals, the driver tree and other tool windows have native counterparts in VS Code. An empty list shows the whole workbench."
+          "markdownDescription": "What **Open Screen and Tools** shows of a lease. Left unset, every display and tool the lease's drivers have a view for opens in a tab of its own. Set, the entries of [Jumpstarter Web](https://github.com/jumpstarter-dev/jumpstarter-web) it names are shown together in one tab: plugin ids (`hmi`), view ids (`hmi/screen`) or kinds of centre view (`@display`, `@tool`, `@terminal`); an empty list is the whole workbench."
         },
         "jumpstarter.webUi.openIn": {
           "type": "string",
