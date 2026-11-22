@@ -10,6 +10,7 @@ import {
   buildWebUiLink,
   DEFAULT_TOOLS,
   normalizeFrameOrigins,
+  parseEndpoints,
   normalizeTools,
   panelIconName,
   originOf,
@@ -193,4 +194,29 @@ test("jumpstarter-web comes from the environment jmp runs from", () => {
 test("origins and tails", () => {
   assert.equal(originOf("https://ws.example:8443/path?x=1"), "https://ws.example:8443");
   assert.equal(tail("a\nb\nc\n", 2), "b\nc");
+});
+
+test("a workspace's endpoints come from the setting, or from its environment", () => {
+  assert.deepEqual(parseEndpoints({ "7071": "https://ws-1.che.example/", "x": "https://no", "7072": "ftp://no" }, undefined), [
+    { port: 7071, url: "https://ws-1.che.example" },
+  ]);
+  assert.deepEqual(parseEndpoints({}, "7071=https://a.example, 7072=https://b.example/path,bad,99999=https://c"), [
+    { port: 7071, url: "https://a.example" },
+    { port: 7072, url: "https://b.example" },
+  ]);
+  assert.deepEqual(parseEndpoints(undefined, undefined), []);
+});
+
+test("on an endpoint the server listens beyond loopback, at the endpoint's address, with its token", () => {
+  assert.deepEqual(
+    buildServeArgs({ port: 7071, host: "0.0.0.0", publicUrl: "https://ws-1.che.example", frameOrigins: ["https://che.example"] }),
+    ["serve", "--host", "0.0.0.0", "--port", "7071", "--public-url", "https://ws-1.che.example", "--auth", "token",
+      "--allowed-frame-origin", "https://che.example"],
+  );
+});
+
+test("a workspace's environment says what frames its panels, when the setting does not", () => {
+  assert.deepEqual(normalizeFrameOrigins(null, "https://che.example"), ["https://che.example"]);
+  assert.deepEqual(normalizeFrameOrigins(["vscode-webview:"], "https://che.example"), ["vscode-webview:"]);
+  assert.deepEqual(normalizeFrameOrigins(undefined, ""), ["vscode-webview:", "vscode-file:"]);
 });

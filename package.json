@@ -761,15 +761,23 @@
           "markdownDescription": "Where a lease's screen and tools, and a driver's view, open. The full Web UI always opens in the system browser."
         },
         "jumpstarter.webUi.frameOrigins": {
-          "type": "array",
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "type": "string"
           },
-          "default": [
-            "vscode-webview:",
-            "vscode-file:"
-          ],
-          "markdownDescription": "What may show Jumpstarter Web in a frame, passed to `jumpstarter-web serve --allowed-frame-origin`: an origin (`https://ide.example.com`) or an application's scheme. The default is a panel of a desktop VS Code window (the webview and the window it is part of); a browser-hosted VS Code (Eclipse Che, code-server) needs the origin its webviews are served from."
+          "markdownDescription": "What may show Jumpstarter Web in a frame, passed to `jumpstarter-web serve --allowed-frame-origin`: an origin (`https://ide.example.com`) or an application's scheme. Unset, it is a panel of a desktop VS Code window (`vscode-webview:` and `vscode-file:`), or what the environment variable `JUMPSTARTER_WEB_FRAME_ORIGINS` names (a workspace in the browser: the origin its editor is served from).",
+          "default": null
+        },
+        "jumpstarter.webUi.endpoints": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "markdownDescription": "Ports of this machine that have an address of their own, as `{\"7071\": \"https://…\"}`, for a workspace in the browser (Eclipse Che, code-server) where the browser cannot reach the machine's loopback. Jumpstarter Web then listens on one of them for each lease whose views are open. Empty, the environment variable `JUMPSTARTER_WEB_ENDPOINTS` (`7071=https://…,7072=https://…`) is read; without either, a free loopback port is used."
         },
         "jumpstarter.webUi.path": {
           "type": "string",

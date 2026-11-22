@@ -43,6 +43,8 @@ interface LeaseRef {
 
 interface RunningServer {
   process: ChildProcess;
+  /** The port it listens on. */
+  port: number;
   /** The address the server printed (with its token, when it uses one). */
   url: string;
 }
@@ -122,6 +124,8 @@ export function registerWebUi(
 
   const servers = new Map<string, RunningServer>();
   const starting = new Map<string, Promise<RunningServer>>();
+  /** The ports of the servers that are starting, by lease: taken, though not in `servers` yet. */
+  const startingPorts = new Map<string, number>();
 
   const stop = (leaseName: string): void => {
     const server = servers.get(leaseName);
@@ -155,15 +159,37 @@ export function registerWebUi(
     const invocation = await jmp.getInvocation();
     const web = await webCommand();
 
-    const port = await freePort();
-    const local = `http://127.0.0.1:${port}`;
-    const external = (await vscode.env.asExternalUri(vscode.Uri.parse(local))).toString();
-    const publicUrl = model.originOf(external) === local ? undefined : model.originOf(external);
+    const config = vscode.workspace.getConfiguration("jumpstarter");
+    // Where a browser cannot reach this machine's loopback (a workspace in the browser), the server listens on
+    // one of the ports the workspace has addresses for; each lease's server takes one.
+    const endpoints = model.parseEndpoints(config.get("webUi.endpoints"), process.env.JUMPSTARTER_WEB_ENDPOINTS);
+    let port: number;
+    let host: string | undefined;
+    let publicUrl: string | undefined;
+    if (endpoints.length > 0) {
+      const taken = new Set([...servers.values(), ...startingPorts.values()].map((s) => (typeof s === "number" ? s : s.port)));
+      const endpoint = endpoints.find((candidate) => !taken.has(candidate.port));
+      if (!endpoint) {
+        throw new Error(
+          `All ${endpoints.length} Web UI endpoints of this workspace are in use: close a lease's views (Stop Web UI Servers) to open another's.`,
+        );
+      }
+      port = endpoint.port;
+      host = "0.0.0.0";
+      publicUrl = endpoint.url;
+    } else {
+      port = await freePort();
+      const local = `http://127.0.0.1:${port}`;
+      const external = (await vscode.env.asExternalUri(vscode.Uri.parse(local))).toString();
+      publicUrl = model.originOf(external) === local ? undefined : model.originOf(external);
+    }
+    startingPorts.set(leaseName, port);
 
     const frameOrigins = model.normalizeFrameOrigins(
-      vscode.workspace.getConfiguration("jumpstarter").get("webUi.frameOrigins"),
+      config.get("webUi.frameOrigins"),
+      process.env.JUMPSTARTER_WEB_FRAME_ORIGINS,
     );
-    const serve = [...web, ...model.buildServeArgs({ port, publicUrl, frameOrigins })];
+    const serve = [...web, ...model.buildServeArgs({ port, host, publicUrl, frameOrigins })];
     const args = [...invocation.prefixArgs, ...buildShellArgs(client, leaseName, serve)];
     jmp.log(`web UI: ${shellQuote([invocation.command, ...args])}`);
 
@@ -206,7 +232,7 @@ export function registerWebUi(
         if (url) {
           settled = true;
           clearTimeout(timer);
-          resolve({ process: child, url });
+          resolve({ process: child, url, port });
         }
       };
       child.stdout?.on("data", onData);
@@ -247,7 +273,10 @@ export function registerWebUi(
           servers.set(leaseName, server);
           return server;
         })
-        .finally(() => starting.delete(leaseName));
+        .finally(() => {
+          starting.delete(leaseName);
+          startingPorts.delete(leaseName);
+        });
       starting.set(leaseName, pending);
     }
     return pending;

@@ -213,8 +213,13 @@ export function buildDriverViewLink(
 }
 
 export interface ServeOptions {
-  /** The loopback port to listen on. */
+  /** The port to listen on. */
   port: number;
+  /**
+   * The address to listen on; loopback unless the port is reached from
+   * outside the machine itself (an endpoint of a workspace's container).
+   */
+  host?: string;
   /**
    * The origin the browser reaches that port through when it is not loopback
    * itself (a forwarded port in a remote window, a Che endpoint).
@@ -236,7 +241,7 @@ export interface ServeOptions {
  * own `jmp shell` tab out.
  */
 export function buildServeArgs(options: ServeOptions): string[] {
-  const args = ["serve", "--host", "127.0.0.1", "--port", String(options.port)];
+  const args = ["serve", "--host", options.host ?? "127.0.0.1", "--port", String(options.port)];
   if (options.publicUrl) {
     args.push("--public-url", options.publicUrl, "--auth", "token");
   }
@@ -271,6 +276,49 @@ export function resolveWebCommand(
   return [exists(beside) ? beside : "jumpstarter-web"];
 }
 
+/** A port of this machine that an address outside it leads to. */
+export interface WebEndpoint {
+  port: number;
+  /** The origin a browser reaches the port at. */
+  url: string;
+}
+
+/**
+ * The endpoints Jumpstarter Web may be served on, where a browser cannot
+ * reach this machine's loopback: a workspace in the browser (Eclipse Che,
+ * code-server), whose container has ports that the platform gives addresses
+ * of their own. From the setting (`{"7071": "https://…"}`) or, as a
+ * workspace's definition gives it, from the environment
+ * (`7071=https://…,7072=https://…`). Anything that is not a port and an
+ * http(s) origin is left out.
+ */
+export function parseEndpoints(setting: unknown, environment: string | undefined): WebEndpoint[] {
+  const pairs: [string, unknown][] =
+    setting !== null && typeof setting === "object" && !Array.isArray(setting) && Object.keys(setting).length > 0
+      ? Object.entries(setting)
+      : (environment ?? "")
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.includes("="))
+          .map((entry): [string, unknown] => [entry.slice(0, entry.indexOf("=")), entry.slice(entry.indexOf("=") + 1)]);
+  const endpoints: WebEndpoint[] = [];
+  for (const [key, value] of pairs) {
+    const port = Number(key.trim());
+    if (!Number.isInteger(port) || port < 1 || port > 65535 || typeof value !== "string") {
+      continue;
+    }
+    try {
+      const url = new URL(value.trim());
+      if (url.protocol === "https:" || url.protocol === "http:") {
+        endpoints.push({ port, url: url.origin });
+      }
+    } catch {
+      // not an address: left out
+    }
+  }
+  return endpoints;
+}
+
 /** An entry of the frame origins setting the server will take: an http(s) origin, or a scheme with its colon. */
 const FRAME_ORIGIN = /^(?:[a-z][a-z0-9+.-]*:|https?:\/\/[a-z0-9.-]+(?::\d{1,5})?)$/;
 
@@ -282,9 +330,11 @@ const FRAME_ORIGIN = /^(?:[a-z][a-z0-9+.-]*:|https?:\/\/[a-z0-9.-]+(?::\d{1,5})?
 export const DESKTOP_FRAME_ORIGINS: readonly string[] = ["vscode-webview:", "vscode-file:"];
 
 /** The frame origins setting as a clean list; anything the server would refuse is left out. */
-export function normalizeFrameOrigins(setting: unknown): string[] {
+export function normalizeFrameOrigins(setting: unknown, environment?: string): string[] {
   if (!Array.isArray(setting)) {
-    return [...DESKTOP_FRAME_ORIGINS];
+    // a workspace's definition says where its editor's panels are served from; else it is a desktop window
+    const given = (environment ?? "").split(",").filter((entry) => entry.trim().length > 0);
+    return given.length > 0 ? normalizeFrameOrigins(given) : [...DESKTOP_FRAME_ORIGINS];
   }
   const seen = new Set<string>();
   for (const value of setting) {

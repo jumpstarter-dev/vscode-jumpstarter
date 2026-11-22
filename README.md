@@ -204,10 +204,13 @@ A view opens in a panel beside the editor that looks like the rest of the
 window: the panel is a webview that frames the page and passes it VS Code's
 theme (light or dark, the editor's colours, its font), and the page shows the
 view alone, without a title bar or status bar of its own. The server lets
-only this window's panels frame it (`jumpstarter.webUi.frameOrigins`). A
-browser-hosted VS Code (Eclipse Che, code-server) serves its webviews from an
-https origin, which has to be named in that setting; that has not been tried
-yet. `jumpstarter.webUi.openIn: "browser"` opens views in the system browser
+only this window's panels frame it (`jumpstarter.webUi.frameOrigins`). In a
+browser-hosted VS Code (Eclipse Che, code-server) the browser cannot reach the
+workspace's loopback: the workspace declares ports with addresses of their
+own and tells the extension (`jumpstarter.webUi.endpoints`, or the
+environment), together with the origin its editor is served from. Run on
+Eclipse Che 7.125: the Appium Inspector works there; a display's live video
+does not yet (its relay is reachable from the workspace's own machine only). `jumpstarter.webUi.openIn: "browser"` opens views in the system browser
 instead.
 
 Which drivers have a view is read from `jumpstarter-web plugins -o json`; with
@@ -340,7 +343,8 @@ managed by the extension.
 | `jumpstarter.pollIntervalSeconds` | `15` | How often (in seconds) the Jumpstarter views poll the controller for exporters and leases (minimum 5). The Administration view polls at half this rate, and never faster than every 30s. |
 | `jumpstarter.webUi.tools` | unset | What **Open Screen and Tools** shows of a lease: Jumpstarter Web plugin ids, view ids (`hmi/screen`) or kinds of centre view (`@display`, `@tool`, `@terminal`). Unset, it is every installed plugin with a display or a tool to show. An empty list shows the whole workbench. |
 | `jumpstarter.webUi.openIn` | `"panel"` | Where a lease's screen and tools, and a driver's view, open: `panel` (beside the editor, themed like the window) or `browser` (the system browser). |
-| `jumpstarter.webUi.frameOrigins` | `["vscode-webview:", "vscode-file:"]` | What may show Jumpstarter Web in a frame (`jumpstarter-web serve --allowed-frame-origin`). The default is a panel of a desktop window. |
+| `jumpstarter.webUi.frameOrigins` | unset | What may show Jumpstarter Web in a frame (`jumpstarter-web serve --allowed-frame-origin`). Unset: a panel of a desktop window, or what `JUMPSTARTER_WEB_FRAME_ORIGINS` names (a workspace in the browser: the origin its editor is served from). |
+| `jumpstarter.webUi.endpoints` | `{}` | For a workspace in the browser (Eclipse Che, code-server): ports of the container that have an address of their own, `{"7071": "https://…"}`. Jumpstarter Web listens on one for each lease whose views are open. Empty: `JUMPSTARTER_WEB_ENDPOINTS` (`7071=https://…,…`), else a loopback port. |
 | `jumpstarter.webUi.path` | `""` | Path to a `jumpstarter-web` executable. Empty takes it from the environment `jmp` runs from. |
 | `jumpstarter.admin.namespace` | `""` | Namespace the Administration view reads. Empty follows the current client config's namespace. |
 | `jumpstarter.admin.kubeconfig` | `""` | Kubeconfig for cluster administration. Empty uses the usual `KUBECONFIG` / `~/.kube/config` resolution. |
