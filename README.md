@@ -188,8 +188,10 @@ parts of a lease VS Code has no view for open beside the editor:
   an **Open View** button on its row in the Leases view. It opens that one
   view, for that one driver, in a tab with the view's icon. Serial and SSH
   consoles are not offered: those are VS Code terminals.
-- **Open Screen and Tools** on a lease opens the lease's screen and Appium
-  Inspector together (`jumpstarter.webUi.tools` says which).
+- **Open Screen** on a lease opens the lease's screen (the first display its
+  drivers have a view for) in one tab. Its other views, such as the Appium
+  Inspector, open from their drivers: an Inspector starts a session on the
+  device, so it opens when it is asked for.
 - **Open Full Web UI in Browser** opens the whole workbench.
 
 One `jumpstarter-web serve` is started per lease, inside the lease session
@@ -341,7 +343,7 @@ managed by the extension.
 | `jumpstarter.kubectlPath` | `"kubectl"` | Executable used for manifest apply/validation when experimental `jmp admin apply` is unavailable. |
 | `jumpstarter.experimentalCliFeatures` | `false` | Enable CLI APIs still on `ide-cli-integration` (driver schemas, driver browsing, exporter-set administration, and `jmp admin apply` instead of `kubectl`). |
 | `jumpstarter.pollIntervalSeconds` | `15` | How often (in seconds) the Jumpstarter views poll the controller for exporters and leases (minimum 5). The Administration view polls at half this rate, and never faster than every 30s. |
-| `jumpstarter.webUi.tools` | unset | What **Open Screen and Tools** shows of a lease: Jumpstarter Web plugin ids, view ids (`hmi/screen`) or kinds of centre view (`@display`, `@tool`, `@terminal`). Unset, it is every installed plugin with a display or a tool to show. An empty list shows the whole workbench. |
+| `jumpstarter.webUi.tools` | unset | What **Open Screen** shows of a lease. Unset: the lease's screen alone. Set: the Jumpstarter Web plugin ids, view ids (`hmi/screen`) or kinds of centre view (`@display`, `@tool`, `@terminal`) it names, together in one tab; an empty list is the whole workbench. |
 | `jumpstarter.webUi.openIn` | `"panel"` | Where a lease's screen and tools, and a driver's view, open: `panel` (beside the editor, themed like the window) or `browser` (the system browser). |
 | `jumpstarter.webUi.frameOrigins` | unset | What may show Jumpstarter Web in a frame (`jumpstarter-web serve --allowed-frame-origin`). Unset: a panel of a desktop window, or what `JUMPSTARTER_WEB_FRAME_ORIGINS` names (a workspace in the browser: the origin its editor is served from). |
 | `jumpstarter.webUi.endpoints` | `{}` | For a workspace in the browser (Eclipse Che, code-server): ports of the container that have an address of their own, `{"7071": "https://…"}`. Jumpstarter Web listens on one for each lease whose views are open. Empty: `JUMPSTARTER_WEB_ENDPOINTS` (`7071=https://…,…`), else a loopback port. |

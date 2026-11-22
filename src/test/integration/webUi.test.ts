@@ -77,7 +77,7 @@ suite("web UI", () => {
     clearCliCalls();
   });
 
-  test("the lease's views open each in a tab of its own, served from inside the lease", async () => {
+  test("a lease opens with its screen in a panel, served from inside the lease", async () => {
     await vscode.commands.executeCommand("jumpstarter.leases.openWebUi", leaseNode);
 
     assert.deepEqual(errors, []);

@@ -197,7 +197,7 @@
       },
       {
         "command": "jumpstarter.leases.openWebUi",
-        "title": "Open Screen and Tools",
+        "title": "Open Screen",
         "category": "Jumpstarter",
         "icon": "$(open-preview)"
       },
@@ -745,7 +745,7 @@
             "type": "string"
           },
           "default": null,
-          "markdownDescription": "What **Open Screen and Tools** shows of a lease. Left unset, every display and tool the lease's drivers have a view for opens in a tab of its own. Set, the entries of [Jumpstarter Web](https://github.com/jumpstarter-dev/jumpstarter-web) it names are shown together in one tab: plugin ids (`hmi`), view ids (`hmi/screen`) or kinds of centre view (`@display`, `@tool`, `@terminal`); an empty list is the whole workbench."
+          "markdownDescription": "What **Open Screen** shows of a lease. Left unset, it is the lease's screen (the first display its drivers have a view for; a tool where there is no display); the other views open from their drivers in the Leases view. Set, the entries of [Jumpstarter Web](https://github.com/jumpstarter-dev/jumpstarter-web) it names are shown together in one tab: plugin ids (`hmi`), view ids (`hmi/screen`) or kinds of centre view (`@display`, `@tool`, `@terminal`); an empty list is the whole workbench."
         },
         "jumpstarter.webUi.openIn": {
           "type": "string",

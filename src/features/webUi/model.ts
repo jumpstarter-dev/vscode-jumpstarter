@@ -24,6 +24,25 @@ export interface WebView {
   names?: string[];
   /** The name of its tab's icon in Jumpstarter Web ("display", "tools"), when it has one. */
   icon?: string;
+  /** What kind of centre view it is, when the listing says: a device's display, or a tool. */
+  kind?: "display" | "tool";
+}
+
+/** A view of one driver of a lease. */
+export interface DriverView {
+  driverPath: readonly string[];
+  /** What the driver is called (the last part of its path). */
+  label: string;
+  view: WebView;
+}
+
+/**
+ * The view a lease is opened with: its device's display, the first there is, since that is what a person
+ * looks at; a lease with no display opens with its first tool. Undefined when no driver has a view. The other
+ * views are opened from their drivers.
+ */
+export function primaryView(candidates: readonly DriverView[]): DriverView | undefined {
+  return candidates.find((candidate) => candidate.view.kind === "display") ?? candidates[0];
 }
 
 /**
@@ -81,6 +100,7 @@ export function parsePluginViews(stdout: string): WebView[] {
         matches: strings(view.matches),
         ...(names.length > 0 ? { names } : {}),
         ...(typeof view.icon === "string" && /^[a-z0-9-]{1,40}$/.test(view.icon) ? { icon: view.icon } : {}),
+        ...(view.kind === "display" || view.kind === "tool" ? { kind: view.kind } : {}),
       });
     }
   }

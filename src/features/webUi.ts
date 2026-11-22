@@ -1,9 +1,8 @@
 /**
  * Web UI feature: open a lease in Jumpstarter Web.
  *
- * - `jumpstarter.leases.openWebUi` opens the lease's screen and Appium
- *   Inspector (the `jumpstarter.webUi.tools` setting) with the page's own
- *   navigation hidden: the parts of a lease VS Code has no view for.
+ * - `jumpstarter.leases.openWebUi` opens the lease's screen (its primary
+ *   view) in a panel: the part of a lease VS Code has no view for.
  * - `jumpstarter.leases.openDriverView` opens one driver's own view (a
  *   screen, an Appium Inspector, a console), offered on the drivers whose
  *   client an installed Jumpstarter Web plugin has a view for.
@@ -330,13 +329,6 @@ export function registerWebUi(
     return panel;
   };
 
-  /** Wait (briefly) until a new panel knows which editor group it is in: the next one is a tab of that group. */
-  const placed = async (panel: vscode.WebviewPanel): Promise<void> => {
-    for (let i = 0; i < 20 && panel.viewColumn === undefined; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-  };
-
   /** Close the panels of a server that is gone: what they frame no longer answers. */
   const closePanelsOf = (serverUrl: string): void => {
     const origin = model.originOf(serverUrl);
@@ -375,31 +367,34 @@ export function registerWebUi(
   };
 
   /**
-   * A panel for every centre view the lease's drivers have; how many there were. None when the driver tree
-   * cannot be read (a CLI without driver browsing) or no driver has a view: the caller then shows the lease's
-   * views together.
+   * The lease's primary view (its screen) in a panel; whether there was one. Not when the driver tree cannot be
+   * read (a CLI without driver browsing) or no driver has a view: the caller then shows the lease's views
+   * together. A lease's other views are opened from their drivers in the tree: a second tab nobody asked for
+   * is a surprise, and an Appium Inspector that opens by itself starts a session on the device.
    */
-  const openDriverPanels = async (ref: LeaseRef, serverUrl: string): Promise<number> => {
+  const openPrimaryPanel = async (ref: LeaseRef, serverUrl: string): Promise<boolean> => {
     let drivers: DriverNodeDescriptor[];
     try {
       drivers = buildDriverNodes((await jmp.describeLeaseWithDrivers(ref.client, ref.lease.name)).driver_tree);
     } catch {
-      return 0;
+      return false;
     }
-    let count = 0;
-    for (const driver of drivers) {
-      for (const view of model.viewsForDriver(driver.driverClass, driver.driverPath, views)) {
-        await placed(
-          showPanel(
-            model.buildDriverViewLink(serverUrl, driver.driverPath, view, "none"),
-            `${view.title}: ${driver.label}`,
-            view.icon,
-          ),
-        );
-        count += 1;
-      }
+    const primary = model.primaryView(
+      drivers.flatMap((driver) =>
+        model
+          .viewsForDriver(driver.driverClass, driver.driverPath, views)
+          .map((view) => ({ driverPath: driver.driverPath, label: driver.label, view })),
+      ),
+    );
+    if (!primary) {
+      return false;
     }
-    return count;
+    showPanel(
+      model.buildDriverViewLink(serverUrl, primary.driverPath, primary.view, "none"),
+      `${primary.view.title}: ${primary.label}`,
+      primary.view.icon,
+    );
+    return true;
   };
 
   const open = async (node: unknown, focused: boolean): Promise<void> => {
@@ -417,10 +412,7 @@ export function registerWebUi(
       const setting = vscode.workspace.getConfiguration("jumpstarter").get("webUi.tools");
       const tools = model.normalizeTools(setting, views);
       if (preferred() === "panel" && !Array.isArray(setting)) {
-        // Each view of the lease's drivers in a tab of its own, as an editor has its files: a view switcher
-        // inside one tab would be a second row of tabs.
-        const opened = await openDriverPanels(ref, server.url);
-        if (opened > 0) {
+        if (await openPrimaryPanel(ref, server.url)) {
           return;
         }
       }

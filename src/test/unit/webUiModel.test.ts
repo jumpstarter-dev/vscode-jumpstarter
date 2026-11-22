@@ -13,6 +13,7 @@ import {
   parseEndpoints,
   normalizeTools,
   panelIconName,
+  primaryView,
   originOf,
   parsePluginViews,
   parseReadyUrl,
@@ -133,7 +134,7 @@ const LISTING = JSON.stringify({
 
 test("only the main views of loadable plugins are offered", () => {
   assert.deepEqual(parsePluginViews(LISTING), [
-    { id: "hmi/screen", plugin: "hmi", title: "Screen", matches: [HMI], icon: "display" },
+    { id: "hmi/screen", plugin: "hmi", title: "Screen", matches: [HMI], icon: "display", kind: "display" },
     // a terminal view is left to VS Code's own terminals; one that does not say its kind is taken as it is
     // one whose condition cannot be checked from here (labels) is left out
     { id: "serial/network-console", plugin: "serial", title: "Serial", matches: ["n.NetworkClient"], names: ["console"] },
@@ -219,4 +220,14 @@ test("a workspace's environment says what frames its panels, when the setting do
   assert.deepEqual(normalizeFrameOrigins(null, "https://che.example"), ["https://che.example"]);
   assert.deepEqual(normalizeFrameOrigins(["vscode-webview:"], "https://che.example"), ["vscode-webview:"]);
   assert.deepEqual(normalizeFrameOrigins(undefined, ""), ["vscode-webview:", "vscode-file:"]);
+});
+
+test("a lease opens with its display, or with its first tool where it has none", () => {
+  const tool = { id: "appium-inspector/inspector", plugin: "appium-inspector", title: "Appium", matches: [], kind: "tool" as const };
+  const screen = { id: "hmi/screen", plugin: "hmi", title: "Screen", matches: [], kind: "display" as const };
+  const appium = { driverPath: ["android", "appium"], label: "appium", view: tool };
+  const hmi = { driverPath: ["cuttlefish", "hmi"], label: "hmi", view: screen };
+  assert.equal(primaryView([appium, hmi]), hmi);
+  assert.equal(primaryView([appium]), appium);
+  assert.equal(primaryView([]), undefined);
 });
