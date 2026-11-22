@@ -18,15 +18,22 @@ if (argv[0] === "plugins" && argv.includes("json")) {
           title: "Power",
           compatible: true,
           views: [
-            { id: "power/meter", type: "main", title: "Meter", matches: ["jumpstarter_driver_power.client.PowerClient"] },
+            { id: "power/meter", type: "main", kind: "display", icon: "display", title: "Meter", matches: ["jumpstarter_driver_power.client.PowerClient"] },
             { id: "power/panel", type: "sidebar", title: "Power", matches: ["jumpstarter_driver_power.client.PowerClient"] },
           ],
+        },
+        {
+          id: "serial",
+          title: "Serial",
+          compatible: true,
+          // a terminal view: VS Code has terminals of its own, so the storage driver offers nothing
+          views: [{ id: "serial/console", type: "main", kind: "terminal", title: "Serial", matches: ["jumpstarter.client.flasher.FlasherClient"] }],
         },
         {
           id: "broken",
           title: "Broken",
           compatible: false,
-          views: [{ id: "broken/view", type: "main", title: "Broken", matches: ["jumpstarter.client.flasher.FlasherClient"] }],
+          views: [{ id: "broken/view", type: "main", kind: "tool", title: "Broken", matches: ["jumpstarter.client.flasher.FlasherClient"] }],
         },
       ],
     }),

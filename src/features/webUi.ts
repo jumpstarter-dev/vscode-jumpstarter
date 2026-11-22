@@ -274,7 +274,7 @@ export function registerWebUi(
     },
   });
 
-  const showPanel = (link: string, title: string): void => {
+  const showPanel = (link: string, title: string, icon?: string): void => {
     const open = panels.get(link);
     if (open) {
       open.reveal();
@@ -287,6 +287,11 @@ export function registerWebUi(
       // Kept when hidden: the view holds a live stream and a session, and a reload would drop both.
       { enableScripts: true, retainContextWhenHidden: true },
     );
+    const name = model.panelIconName(icon);
+    panel.iconPath = {
+      light: vscode.Uri.joinPath(context.extensionUri, "media", "icons", `view-${name}-light.svg`),
+      dark: vscode.Uri.joinPath(context.extensionUri, "media", "icons", `view-${name}-dark.svg`),
+    };
     panel.webview.html = buildPanelHtml({ link, title, nonce: randomBytes(16).toString("hex") });
     panels.set(link, panel);
     panel.onDidDispose(() => panels.delete(link));
@@ -341,7 +346,10 @@ export function registerWebUi(
         await showInBrowser(model.buildWebUiLink(server.url));
         return;
       }
-      const tools = model.normalizeTools(vscode.workspace.getConfiguration("jumpstarter").get("webUi.tools"));
+      const tools = model.normalizeTools(
+        vscode.workspace.getConfiguration("jumpstarter").get("webUi.tools"),
+        views,
+      );
       if (preferred() === "browser") {
         await showInBrowser(model.buildWebUiLink(server.url, tools.length > 0 ? { tools, chrome: "minimal" } : {}));
         return;
@@ -349,6 +357,7 @@ export function registerWebUi(
       showPanel(
         model.buildWebUiLink(server.url, { tools, chrome: "none" }),
         ref.lease.exporter_name || ref.lease.name.slice(0, 8),
+        "display",
       );
     } catch (err) {
       report(err);
@@ -388,6 +397,7 @@ export function registerWebUi(
       showPanel(
         model.buildDriverViewLink(server.url, n.descriptor.driverPath, view, "none"),
         `${view.title}: ${n.descriptor.label}`,
+        view.icon,
       );
     } catch (err) {
       report(err);

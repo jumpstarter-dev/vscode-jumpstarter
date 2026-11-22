@@ -11,6 +11,7 @@ import {
   DEFAULT_TOOLS,
   normalizeFrameOrigins,
   normalizeTools,
+  panelIconName,
   originOf,
   parsePluginViews,
   parseReadyUrl,
@@ -52,6 +53,8 @@ test("an instance entry keeps its path, encoded", () => {
 
 test("the tools setting is cleaned before it is used", () => {
   assert.deepEqual(normalizeTools(undefined), [...DEFAULT_TOOLS]);
+  // unset, with the installed plugins known: the ones that have a centre view to show
+  assert.deepEqual(normalizeTools(null, parsePluginViews(LISTING)), ["hmi", "serial"]);
   assert.deepEqual(normalizeTools([" hmi ", "hmi", "@display", "bad entry", "a&b=c", 7]), ["hmi", "@display"]);
   assert.deepEqual(normalizeTools([]), []);
 });
@@ -106,7 +109,7 @@ const LISTING = JSON.stringify({
     {
       id: "hmi",
       compatible: true,
-      views: [{ id: "hmi/screen", type: "main", title: "Screen", matches: [HMI] }],
+      views: [{ id: "hmi/screen", type: "main", kind: "display", icon: "display", title: "Screen", matches: [HMI] }],
     },
     {
       id: "power",
@@ -118,6 +121,7 @@ const LISTING = JSON.stringify({
       compatible: true,
       views: [
         { id: "serial/network-console", type: "main", title: "Serial", matches: ["n.NetworkClient"], names: ["console"] },
+        { id: "serial/console", type: "main", kind: "terminal", title: "Serial", matches: ["s.PySerialClient"] },
         { id: "serial/labelled", type: "main", title: "Serial", matches: ["n.NetworkClient"], labels: { a: "b" } },
       ],
     },
@@ -128,7 +132,8 @@ const LISTING = JSON.stringify({
 
 test("only the main views of loadable plugins are offered", () => {
   assert.deepEqual(parsePluginViews(LISTING), [
-    { id: "hmi/screen", plugin: "hmi", title: "Screen", matches: [HMI] },
+    { id: "hmi/screen", plugin: "hmi", title: "Screen", matches: [HMI], icon: "display" },
+    // a terminal view is left to VS Code's own terminals; one that does not say its kind is taken as it is
     // one whose condition cannot be checked from here (labels) is left out
     { id: "serial/network-console", plugin: "serial", title: "Serial", matches: ["n.NetworkClient"], names: ["console"] },
   ]);
@@ -152,7 +157,14 @@ test("a view for drivers of certain names is not every driver's of that class", 
   assert.deepEqual(viewsForDriver("n.NetworkClient", ["cuttlefish", "turn"], views), []);
 });
 
-test("a driver's link opens that driver, that view, and its plugin alone", () => {
+test("a panel's tab has the icon of its view, or a plain one", () => {
+  assert.equal(panelIconName("display"), "display");
+  assert.equal(panelIconName("tools"), "tools");
+  assert.equal(panelIconName("plug"), "view");
+  assert.equal(panelIconName(undefined), "view");
+});
+
+test("a driver's link opens that driver and that view of it alone", () => {
   const [view] = parsePluginViews(LISTING);
   assert.equal(
     buildDriverViewLink("http://127.0.0.1:8123/", ["cuttlefish", "hmi"], view),

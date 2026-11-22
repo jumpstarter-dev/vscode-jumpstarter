@@ -183,10 +183,11 @@ With [Jumpstarter Web](https://github.com/jumpstarter-dev/jumpstarter-web)
 (`jumpstarter-web`, optional) installed in the same environment as `jmp`, the
 parts of a lease VS Code has no view for open beside the editor:
 
-- A driver whose client an installed Jumpstarter Web plugin has a view for
-  (a display's **Screen**, the **Appium Inspector**, a serial or SSH console)
-  shows an **Open View** button on its row in the Leases view. It opens that
-  one view, for that one driver.
+- A driver whose client an installed Jumpstarter Web plugin has a centre view
+  for (a display's **Screen**, a tool such as the **Appium Inspector**) shows
+  an **Open View** button on its row in the Leases view. It opens that one
+  view, for that one driver, in a tab with the view's icon. Serial and SSH
+  consoles are not offered: those are VS Code terminals.
 - **Open Screen and Tools** on a lease opens the lease's screen and Appium
   Inspector together (`jumpstarter.webUi.tools` says which).
 - **Open Full Web UI in Browser** opens the whole workbench.
@@ -337,7 +338,7 @@ managed by the extension.
 | `jumpstarter.kubectlPath` | `"kubectl"` | Executable used for manifest apply/validation when experimental `jmp admin apply` is unavailable. |
 | `jumpstarter.experimentalCliFeatures` | `false` | Enable CLI APIs still on `ide-cli-integration` (driver schemas, driver browsing, exporter-set administration, and `jmp admin apply` instead of `kubectl`). |
 | `jumpstarter.pollIntervalSeconds` | `15` | How often (in seconds) the Jumpstarter views poll the controller for exporters and leases (minimum 5). The Administration view polls at half this rate, and never faster than every 30s. |
-| `jumpstarter.webUi.tools` | `["hmi", "appium-inspector"]` | What **Open Screen and Tools** shows of a lease: Jumpstarter Web plugin ids, view ids (`hmi/screen`) or kinds of view (`@display`, `@terminal`, `@tool`). Empty shows the whole workbench. |
+| `jumpstarter.webUi.tools` | unset | What **Open Screen and Tools** shows of a lease: Jumpstarter Web plugin ids, view ids (`hmi/screen`) or kinds of centre view (`@display`, `@tool`, `@terminal`). Unset, it is every installed plugin with a display or a tool to show. An empty list shows the whole workbench. |
 | `jumpstarter.webUi.openIn` | `"panel"` | Where a lease's screen and tools, and a driver's view, open: `panel` (beside the editor, themed like the window) or `browser` (the system browser). |
 | `jumpstarter.webUi.frameOrigins` | `["vscode-webview:", "vscode-file:"]` | What may show Jumpstarter Web in a frame (`jumpstarter-web serve --allowed-frame-origin`). The default is a panel of a desktop window. |
 | `jumpstarter.webUi.path` | `""` | Path to a `jumpstarter-web` executable. Empty takes it from the environment `jmp` runs from. |

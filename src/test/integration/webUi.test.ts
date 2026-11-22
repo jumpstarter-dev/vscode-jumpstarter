@@ -84,7 +84,7 @@ suite("web UI", () => {
     // Beside the editor, not in a browser window.
     assert.deepEqual(opened, []);
     assert.equal(shown().length, 1);
-    assert.match(shown()[0], /^http:\/\/127\.0\.0\.1:\d+\/#\/d\/\?only=hmi,appium-inspector&chrome=none$/);
+    assert.match(shown()[0], /^http:\/\/127\.0\.0\.1:\d+\/#\/d\/\?only=power&chrome=none$/);
 
     const [argv] = callsMatching("shell");
     const lease = (leaseNode as { lease: { name: string } }).lease.name;

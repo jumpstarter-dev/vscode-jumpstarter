@@ -22,13 +22,25 @@ export interface WebView {
   matches: string[];
   /** When set, only drivers with one of these names (the last segment of their path) have it. */
   names?: string[];
+  /** The name of its tab's icon in Jumpstarter Web ("display", "tools"), when it has one. */
+  icon?: string;
 }
 
 /**
- * The main views of the installed, loadable plugins, from
- * `jumpstarter-web plugins -o json`. Tool windows and toolbar items are left
- * out: they belong to a workbench, not to a panel of their own. Anything
- * malformed is skipped rather than trusted.
+ * The icon of a panel's tab, for a view's own icon name: one of the SVGs in
+ * media/icons (`view-<name>-light.svg` and `-dark.svg`).
+ */
+export function panelIconName(icon: string | undefined): "display" | "tools" | "view" {
+  return icon === "display" ? "display" : icon === "tools" ? "tools" : "view";
+}
+
+/**
+ * The centre views of the installed, loadable plugins, from
+ * `jumpstarter-web plugins -o json`: a device's display, a tool such as the
+ * Appium Inspector. Everything else has a native counterpart here and is left
+ * out: a terminal view (a serial or SSH console) is a VS Code terminal, and
+ * tool windows and toolbar items belong to a workbench, not to a panel of
+ * their own. Anything malformed is skipped rather than trusted.
  */
 export function parsePluginViews(stdout: string): WebView[] {
   let parsed: unknown;
@@ -50,6 +62,10 @@ export function parsePluginViews(stdout: string): WebView[] {
       if (!view || view.type !== "main" || typeof view.id !== "string" || !ENTRY.test(view.id)) {
         continue;
       }
+      // (a listing that does not say the kind predates it: its main views are taken as they are)
+      if (view.kind === "terminal") {
+        continue;
+      }
       // Conditions that cannot be checked from the CLI's driver tree (every class of a chain, a driver's
       // labels): better not to offer the view than to offer one the page will not show.
       if (view.all !== undefined || view.labels !== undefined) {
@@ -64,6 +80,7 @@ export function parsePluginViews(stdout: string): WebView[] {
         title: typeof view.title === "string" && view.title ? view.title : view.id,
         matches: strings(view.matches),
         ...(names.length > 0 ? { names } : {}),
+        ...(typeof view.icon === "string" && /^[a-z0-9-]{1,40}$/.test(view.icon) ? { icon: view.icon } : {}),
       });
     }
   }
@@ -94,8 +111,23 @@ const READY = /^jumpstarter-web: (https?:\/\/\S+)\s*$/m;
 /** One entry of the tools list: an extension id, an instance of one, a plugin id, or a kind of main view. */
 const ENTRY = /^(?:@(?:display|terminal|tool)|[A-Za-z0-9._\-/#]{1,200})$/;
 
-/** What the focused link shows when the setting is left alone. */
-export const DEFAULT_TOOLS: readonly string[] = ["hmi", "appium-inspector"];
+/**
+ * What the focused link shows when the setting is left alone and the
+ * installed plugins are not known: the centre views that are a display or a
+ * tool. Terminals, the driver tree and the tool windows have native
+ * counterparts in VS Code.
+ */
+export const DEFAULT_TOOLS: readonly string[] = ["@display", "@tool"];
+
+/**
+ * What the focused link shows when the setting is left alone: the plugins
+ * that have a centre view to show (each with what it has around that view),
+ * as the installed Jumpstarter Web lists them.
+ */
+export function defaultTools(views: readonly WebView[]): string[] {
+  const plugins = [...new Set(views.map((view) => view.plugin))].sort();
+  return plugins.length > 0 ? plugins : [...DEFAULT_TOOLS];
+}
 
 /** How long `serve` may take to print its address (it attaches to the lease first). */
 export const START_TIMEOUT_MS = 60_000;
@@ -109,9 +141,9 @@ export function parseReadyUrl(output: string): string | undefined {
  * The tools setting as a clean list: trimmed, deduplicated, and without
  * entries the page would not understand (they would otherwise end up in a URL).
  */
-export function normalizeTools(setting: unknown): string[] {
+export function normalizeTools(setting: unknown, views: readonly WebView[] = []): string[] {
   if (!Array.isArray(setting)) {
-    return [...DEFAULT_TOOLS];
+    return defaultTools(views);
   }
   const seen = new Set<string>();
   for (const value of setting) {
@@ -162,8 +194,10 @@ export function buildWebUiLink(serverUrl: string, options: WebUiLinkOptions = {}
 
 /**
  * The link to one driver's view, alone: the driver's page, that view in
- * front, and only its plugin's parts around it (an Inspector keeps its panel;
- * the lease's other screens and terminals are left out).
+ * front, and only what its plugin has for it around it (the Appium
+ * Inspector's source tree is a window beside its view, and VS Code has
+ * nothing of its own for it). The lease's terminals, driver tree and other
+ * tool windows, which VS Code does have, are left out.
  */
 export function buildDriverViewLink(
   serverUrl: string,

@@ -166,6 +166,17 @@ suite("web UI, for real", () => {
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     }
+    // JMP_REAL_THEMES: go through these colour themes, saying when each is on, so a script outside can take a
+    // picture of every one.
+    const themes = (process.env.JMP_REAL_THEMES ?? "").split("|").filter((name) => name.length > 0);
+    for (const theme of themes) {
+      await vscode.workspace
+        .getConfiguration("workbench")
+        .update("colorTheme", theme, vscode.ConfigurationTarget.Global);
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+      console.log(`theme on: ${theme}`);
+      await new Promise((resolve) => setTimeout(resolve, 6000));
+    }
     console.log("holding the window");
     await new Promise((resolve) => setTimeout(resolve, Number(process.env.JMP_REAL_HOLD ?? "60") * 1000));
   });
