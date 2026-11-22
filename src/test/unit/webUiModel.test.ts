@@ -9,6 +9,7 @@ import {
   buildServeArgs,
   buildWebUiLink,
   DEFAULT_TOOLS,
+  normalizeFrameOrigins,
   normalizeTools,
   originOf,
   parsePluginViews,
@@ -17,6 +18,7 @@ import {
   tail,
   viewsForDriver,
 } from "../../features/webUi/model";
+import { buildPanelHtml, HOST_MESSAGE, HOST_TOKEN_SOURCES } from "../../features/webUi/panel";
 
 test("the server's address is read from its ready line, among other output", () => {
   const output = "INFO attaching to lease\njumpstarter-web: http://127.0.0.1:8123/\nINFO serving\n";
@@ -27,7 +29,7 @@ test("the server's address is read from its ready line, among other output", () 
 
 test("the focused link narrows the page and hides its navigation", () => {
   assert.equal(
-    buildWebUiLink("http://127.0.0.1:8123/", { tools: ["hmi", "appium-inspector"], minimal: true }),
+    buildWebUiLink("http://127.0.0.1:8123/", { tools: ["hmi", "appium-inspector"], chrome: "minimal" }),
     "http://127.0.0.1:8123/#/d/?only=hmi,appium-inspector&chrome=minimal",
   );
 });
@@ -37,7 +39,7 @@ test("the full link opens the device with nothing narrowed", () => {
 });
 
 test("a token stays in the query and never reaches the hash", () => {
-  const link = buildWebUiLink("https://ws.example/?token=abc", { tools: ["hmi"], minimal: true });
+  const link = buildWebUiLink("https://ws.example/?token=abc", { tools: ["hmi"], chrome: "minimal" });
   assert.equal(link, "https://ws.example/?token=abc#/d/?only=hmi&chrome=minimal");
 });
 
@@ -56,6 +58,46 @@ test("the tools setting is cleaned before it is used", () => {
 
 test("serve listens on loopback", () => {
   assert.deepEqual(buildServeArgs({ port: 8123 }), ["serve", "--host", "127.0.0.1", "--port", "8123"]);
+});
+
+test("serve is told what may frame the page", () => {
+  const args = buildServeArgs({ port: 8123, frameOrigins: ["vscode-webview:", "https://che.example"] });
+  assert.deepEqual(args.slice(-4), [
+    "--allowed-frame-origin", "vscode-webview:", "--allowed-frame-origin", "https://che.example",
+  ]);
+});
+
+test("the frame origins setting is cleaned; unset, it is a desktop window's panels", () => {
+  assert.deepEqual(normalizeFrameOrigins(undefined), ["vscode-webview:", "vscode-file:"]);
+  assert.deepEqual(normalizeFrameOrigins([]), []);
+  assert.deepEqual(
+    normalizeFrameOrigins(["VSCode-Webview:", "https://che.example", "*", "https://a.example/path", "x y", 3]),
+    ["vscode-webview:", "https://che.example"],
+  );
+});
+
+test("a panel's link shows the views alone", () => {
+  const [view] = parsePluginViews(LISTING);
+  assert.match(buildDriverViewLink("http://127.0.0.1:1/", ["hmi"], view, "none"), /&chrome=none$/);
+  assert.equal(
+    buildWebUiLink("http://127.0.0.1:1/", { tools: ["hmi"], chrome: "none" }),
+    "http://127.0.0.1:1/#/d/?only=hmi&chrome=none",
+  );
+});
+
+test("the panel's document frames the link and nothing else, and knows whom to tell the theme", () => {
+  const link = "http://127.0.0.1:8123/#/d/hmi?view=hmi%2Fscreen%23hmi&only=hmi&chrome=none";
+  const html = buildPanelHtml({ link, nonce: "abc123", title: 'Screen: "hmi" <1>' });
+  // only this server may be framed, only this document's own script and style run
+  assert.match(html, /frame-src http:\/\/127\.0\.0\.1:8123; script-src 'nonce-abc123'; style-src 'nonce-abc123'/);
+  assert.ok(html.includes('src="http://127.0.0.1:8123/#/d/hmi?view=hmi%2Fscreen%23hmi&#38;only=hmi&#38;chrome=none"'));
+  assert.ok(html.includes('"origin":"http://127.0.0.1:8123"'));
+  assert.ok(html.includes(HOST_MESSAGE));
+  // the title is text, never markup
+  assert.ok(!html.includes('<1>'));
+  // every token the page knows has somewhere to come from
+  assert.ok(Object.keys(HOST_TOKEN_SOURCES).every((token) => token.startsWith("--jw-host-")));
+  assert.ok(html.includes("--vscode-editor-background"));
 });
 
 const HMI = "jumpstarter_driver_hmi.client.HmiClient";

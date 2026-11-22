@@ -15,7 +15,7 @@ suite("web UI", () => {
   /** Links handed to the system browser. */
   let opened: string[] = [];
   /** Links shown in a panel beside the editor. */
-  let panels: string[] = [];
+  const shown = (): string[] => api.webUi.panelLinks();
   let errors: string[] = [];
   let restore: () => void = () => {};
 
@@ -47,26 +47,10 @@ suite("web UI", () => {
     // Nothing may really open a browser, or a panel, from a test run.
     const env = vscode.env as unknown as Record<string, unknown>;
     const window = vscode.window as unknown as Record<string, unknown>;
-    const commands = vscode.commands as unknown as Record<string, unknown>;
-    const original = {
-      openExternal: env.openExternal,
-      showErrorMessage: window.showErrorMessage,
-      executeCommand: commands.executeCommand,
-    };
+    const original = { openExternal: env.openExternal, showErrorMessage: window.showErrorMessage };
     env.openExternal = async (target: unknown) => {
       opened.push(String(target));
       return true;
-    };
-    commands.executeCommand = (command: string, ...args: unknown[]) => {
-      if (command === "simpleBrowser.api.open") {
-        panels.push(String(args[0]));
-        return Promise.resolve();
-      }
-      return (original.executeCommand as (...a: unknown[]) => Thenable<unknown>).call(
-        vscode.commands,
-        command,
-        ...args,
-      );
     };
     window.showErrorMessage = async (message: string) => {
       errors.push(message);
@@ -74,7 +58,6 @@ suite("web UI", () => {
     };
     restore = () => {
       env.openExternal = original.openExternal;
-      commands.executeCommand = original.executeCommand;
       window.showErrorMessage = original.showErrorMessage;
     };
   });
@@ -89,7 +72,7 @@ suite("web UI", () => {
 
   setup(() => {
     opened = [];
-    panels = [];
+    api.webUi.closePanels();
     errors = [];
     clearCliCalls();
   });
@@ -100,15 +83,21 @@ suite("web UI", () => {
     assert.deepEqual(errors, []);
     // Beside the editor, not in a browser window.
     assert.deepEqual(opened, []);
-    assert.equal(panels.length, 1);
-    assert.match(panels[0], /^http:\/\/127\.0\.0\.1:\d+\/#\/d\/\?only=hmi,appium-inspector&chrome=minimal$/);
+    assert.equal(shown().length, 1);
+    assert.match(shown()[0], /^http:\/\/127\.0\.0\.1:\d+\/#\/d\/\?only=hmi,appium-inspector&chrome=none$/);
 
     const [argv] = callsMatching("shell");
     const lease = (leaseNode as { lease: { name: string } }).lease.name;
     assert.deepEqual(argv.slice(0, 6), ["shell", "--client", "fake", "--lease", lease, "--"]);
     const serve = argv.slice(argv.indexOf("serve"));
     assert.deepEqual(serve.slice(0, 3), ["serve", "--host", "127.0.0.1"]);
-    assert.equal(api.webUi.serverUrl(lease), panels[0].split("#")[0]);
+    assert.deepEqual(serve.slice(-4), [
+      "--allowed-frame-origin", "vscode-webview:", "--allowed-frame-origin", "vscode-file:",
+    ]);
+    assert.equal(api.webUi.serverUrl(lease), shown()[0].split("#")[0]);
+    // the panel frames that link, and only that server
+    const html = api.webUi.panelHtml(shown()[0]) ?? "";
+    assert.ok(html.includes(`frame-src ${new URL(shown()[0]).origin};`));
   });
 
   test("the full workbench reuses the lease's server, in the system browser", async () => {
@@ -124,7 +113,7 @@ suite("web UI", () => {
     await config.update("webUi.tools", ["hmi/screen"], vscode.ConfigurationTarget.Global);
     try {
       await vscode.commands.executeCommand("jumpstarter.leases.openWebUi", leaseNode);
-      assert.match(panels[0], /#\/d\/\?only=hmi%2Fscreen&chrome=minimal$/);
+      assert.match(shown()[0], /#\/d\/\?only=hmi%2Fscreen&chrome=none$/);
     } finally {
       await config.update("webUi.tools", undefined, vscode.ConfigurationTarget.Global);
     }
@@ -137,7 +126,15 @@ suite("web UI", () => {
 
     await vscode.commands.executeCommand("jumpstarter.leases.openWebUi", leaseNode);
     assert.equal(callsMatching("shell").length, 1);
-    assert.equal(panels.length, 1);
+    assert.equal(shown().length, 1);
+  });
+
+  test("asking for a view again brings its panel forward, and a stopped server takes its panels with it", async () => {
+    await vscode.commands.executeCommand("jumpstarter.leases.openWebUi", leaseNode);
+    await vscode.commands.executeCommand("jumpstarter.leases.openWebUi", leaseNode);
+    assert.equal(shown().length, 1);
+    await vscode.commands.executeCommand("jumpstarter.webUi.stop");
+    assert.deepEqual(shown(), []);
   });
 
   test("the setting sends the screen and tools to the system browser instead", async () => {
@@ -145,8 +142,9 @@ suite("web UI", () => {
     await config.update("webUi.openIn", "browser", vscode.ConfigurationTarget.Global);
     try {
       await vscode.commands.executeCommand("jumpstarter.leases.openWebUi", leaseNode);
-      assert.deepEqual(panels, []);
+      assert.deepEqual(shown(), []);
       assert.equal(opened.length, 1);
+      assert.match(opened[0], /&chrome=minimal$/);
     } finally {
       await config.update("webUi.openIn", undefined, vscode.ConfigurationTarget.Global);
     }
@@ -170,10 +168,10 @@ suite("web UI", () => {
     await vscode.commands.executeCommand("jumpstarter.leases.openDriverView", power);
 
     assert.deepEqual(errors, []);
-    assert.equal(panels.length, 1);
+    assert.equal(shown().length, 1);
     assert.match(
-      panels[0],
-      /^http:\/\/127\.0\.0\.1:\d+\/#\/d\/power\?view=power%2Fmeter%23power&only=power&chrome=minimal$/,
+      shown()[0],
+      /^http:\/\/127\.0\.0\.1:\d+\/#\/d\/power\?view=power%2Fmeter%23power&only=power&chrome=none$/,
     );
   });
 
@@ -185,7 +183,7 @@ suite("web UI", () => {
     } finally {
       delete process.env.JMP_FAKE_WEB;
     }
-    assert.deepEqual([...opened, ...panels], []);
+    assert.deepEqual([...opened, ...shown()], []);
     assert.equal(errors.length, 1);
     assert.match(errors[0], /not installed/);
   });

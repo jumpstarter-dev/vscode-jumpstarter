@@ -755,10 +755,21 @@
           ],
           "default": "panel",
           "enumDescriptions": [
-            "A panel beside the editor, in VS Code's own browser.",
+            "A panel beside the editor, themed like the rest of the window.",
             "The system browser."
           ],
           "markdownDescription": "Where a lease's screen and tools, and a driver's view, open. The full Web UI always opens in the system browser."
+        },
+        "jumpstarter.webUi.frameOrigins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "vscode-webview:",
+            "vscode-file:"
+          ],
+          "markdownDescription": "What may show Jumpstarter Web in a frame, passed to `jumpstarter-web serve --allowed-frame-origin`: an origin (`https://ide.example.com`) or an application's scheme. The default is a panel of a desktop VS Code window (the webview and the window it is part of); a browser-hosted VS Code (Eclipse Che, code-server) needs the origin its webviews are served from."
         },
         "jumpstarter.webUi.path": {
           "type": "string",

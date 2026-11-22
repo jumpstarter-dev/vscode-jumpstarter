@@ -10,9 +10,10 @@
  * - `jumpstarter.leases.openFullWebUi` opens the whole workbench in the
  *   browser.
  *
- * The first two open in a panel beside the editor (`jumpstarter.webUi.openIn`),
- * through VS Code's own browser; the setting sends them to the system browser
- * instead.
+ * The first two open in a panel beside the editor (`jumpstarter.webUi.openIn`):
+ * a webview that frames the page and passes it the window's theme, so the view
+ * looks like the rest of VS Code (./webUi/panel.ts). The setting sends them to
+ * the system browser instead.
  * - `jumpstarter.webUi.stop` stops the servers this window started.
  *
  * One `jumpstarter-web serve` runs per lease, inside that lease's session
@@ -32,6 +33,8 @@ import { buildShellArgs, shellQuote } from "../services/jmpProtocol";
 import { Lease } from "../types";
 import type { DriverNode, LeasesTreeProvider } from "./leases/provider";
 import * as model from "./webUi/model";
+import { buildPanelHtml } from "./webUi/panel";
+import { randomBytes } from "crypto";
 
 interface LeaseRef {
   client: string;
@@ -49,6 +52,11 @@ export interface WebUiApi {
   /** The address of the lease's running server, if this window started one. */
   serverUrl(leaseName: string): string | undefined;
   stopAll(): void;
+  /** The links shown in panels of this window, oldest first. */
+  panelLinks(): string[];
+  /** The document of the panel that shows a link, if one does. */
+  panelHtml(link: string): string | undefined;
+  closePanels(): void;
   /** Ask the environment again which plugin views there are, and settle. */
   refreshViews(): Promise<void>;
 }
@@ -118,6 +126,9 @@ export function registerWebUi(
   const stop = (leaseName: string): void => {
     const server = servers.get(leaseName);
     servers.delete(leaseName);
+    if (server) {
+      closePanelsOf(server.url);
+    }
     if (!server || server.process.exitCode !== null) {
       return;
     }
@@ -149,7 +160,10 @@ export function registerWebUi(
     const external = (await vscode.env.asExternalUri(vscode.Uri.parse(local))).toString();
     const publicUrl = model.originOf(external) === local ? undefined : model.originOf(external);
 
-    const serve = [...web, ...model.buildServeArgs({ port, publicUrl })];
+    const frameOrigins = model.normalizeFrameOrigins(
+      vscode.workspace.getConfiguration("jumpstarter").get("webUi.frameOrigins"),
+    );
+    const serve = [...web, ...model.buildServeArgs({ port, publicUrl, frameOrigins })];
     const args = [...invocation.prefixArgs, ...buildShellArgs(client, leaseName, serve)];
     jmp.log(`web UI: ${shellQuote([invocation.command, ...args])}`);
 
@@ -203,7 +217,11 @@ export function registerWebUi(
       });
       child.on("close", (code) => {
         if (servers.get(leaseName)?.process === child) {
+          const gone = servers.get(leaseName);
           servers.delete(leaseName);
+          if (gone) {
+            closePanelsOf(gone.url);
+          }
           jmp.log(`web UI of ${leaseName} exited (${code})`);
         }
         const missing = /No module named jumpstarter_web|jumpstarter-web.*(not found|No such file)/i.test(output);
@@ -244,25 +262,52 @@ export function registerWebUi(
     return undefined;
   };
 
-  /**
-   * Show a link: in a panel beside the editor, or in the system browser.
-   *
-   * Links are passed as strings. Uri.toString() percent-encodes the `?`, `=`
-   * and `,` of the hash, which the page reads as its route; both
-   * openExternal and the built-in browser take a string as it is.
-   */
-  const show = async (link: string, where: "panel" | "browser"): Promise<void> => {
-    if (where === "panel") {
-      try {
-        await vscode.commands.executeCommand("simpleBrowser.api.open", link, {
-          viewColumn: vscode.ViewColumn.Beside,
-          preserveFocus: false,
-        });
-        return;
-      } catch (err) {
-        jmp.log(`web UI: no built-in browser (${err instanceof Error ? err.message : String(err)}); using the system one`);
+  // -- panels -----------------------------------------------------------------
+
+  /** The open panels, by the link each shows: asking for a view again brings its panel forward. */
+  const panels = new Map<string, vscode.WebviewPanel>();
+  context.subscriptions.push({
+    dispose: () => {
+      for (const panel of [...panels.values()]) {
+        panel.dispose();
+      }
+    },
+  });
+
+  const showPanel = (link: string, title: string): void => {
+    const open = panels.get(link);
+    if (open) {
+      open.reveal();
+      return;
+    }
+    const panel = vscode.window.createWebviewPanel(
+      "jumpstarter.webView",
+      title,
+      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: false },
+      // Kept when hidden: the view holds a live stream and a session, and a reload would drop both.
+      { enableScripts: true, retainContextWhenHidden: true },
+    );
+    panel.webview.html = buildPanelHtml({ link, title, nonce: randomBytes(16).toString("hex") });
+    panels.set(link, panel);
+    panel.onDidDispose(() => panels.delete(link));
+  };
+
+  /** Close the panels of a server that is gone: what they frame no longer answers. */
+  const closePanelsOf = (serverUrl: string): void => {
+    const origin = model.originOf(serverUrl);
+    for (const [link, panel] of [...panels]) {
+      if (model.originOf(link) === origin) {
+        panel.dispose();
       }
     }
+  };
+
+  /**
+   * Hand a link to the system browser. As a string: Uri.toString()
+   * percent-encodes the `?`, `=` and `,` of the hash, which the page reads as
+   * its route, and openExternal takes a string as it is.
+   */
+  const showInBrowser = async (link: string): Promise<void> => {
     const opened = await vscode.env.openExternal(link as unknown as vscode.Uri);
     if (!opened) {
       void vscode.window.showWarningMessage("Jumpstarter: the Web UI is running, but no browser could be opened.");
@@ -291,12 +336,20 @@ export function registerWebUi(
     }
     try {
       const server = await serverFor(ref.client, ref.lease.name);
-      const tools = focused
-        ? model.normalizeTools(vscode.workspace.getConfiguration("jumpstarter").get("webUi.tools"))
-        : [];
-      const link = model.buildWebUiLink(server.url, { tools, minimal: focused && tools.length > 0 });
-      // The whole workbench wants a window of its own.
-      await show(link, focused ? preferred() : "browser");
+      if (!focused) {
+        // The whole workbench wants a window of its own.
+        await showInBrowser(model.buildWebUiLink(server.url));
+        return;
+      }
+      const tools = model.normalizeTools(vscode.workspace.getConfiguration("jumpstarter").get("webUi.tools"));
+      if (preferred() === "browser") {
+        await showInBrowser(model.buildWebUiLink(server.url, tools.length > 0 ? { tools, chrome: "minimal" } : {}));
+        return;
+      }
+      showPanel(
+        model.buildWebUiLink(server.url, { tools, chrome: "none" }),
+        ref.lease.exporter_name || ref.lease.name.slice(0, 8),
+      );
     } catch (err) {
       report(err);
     }
@@ -328,7 +381,14 @@ export function registerWebUi(
     }
     try {
       const server = await serverFor(n.client, n.leaseName);
-      await show(model.buildDriverViewLink(server.url, n.descriptor.driverPath, view), preferred());
+      if (preferred() === "browser") {
+        await showInBrowser(model.buildDriverViewLink(server.url, n.descriptor.driverPath, view, "minimal"));
+        return;
+      }
+      showPanel(
+        model.buildDriverViewLink(server.url, n.descriptor.driverPath, view, "none"),
+        `${view.title}: ${n.descriptor.label}`,
+      );
     } catch (err) {
       report(err);
     }
@@ -350,6 +410,13 @@ export function registerWebUi(
   return {
     serverUrl: (leaseName) => servers.get(leaseName)?.url,
     stopAll,
+    panelLinks: () => [...panels.keys()],
+    panelHtml: (link) => panels.get(link)?.webview.html,
+    closePanels: () => {
+      for (const panel of [...panels.values()]) {
+        panel.dispose();
+      }
+    },
     refreshViews,
   };
 }

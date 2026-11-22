@@ -26,7 +26,14 @@ export default defineConfig({
     "--user-data-dir",
     join(ROOT, "user-data"),
     // JMP_REAL_DEBUG_PORT: let a script outside take pictures of the window (Chrome DevTools Protocol).
-    ...(process.env.JMP_REAL_DEBUG_PORT ? [`--remote-debugging-port=${process.env.JMP_REAL_DEBUG_PORT}`] : []),
+    // (and keep the window painting while it is behind others: a page that is never painted never lays out)
+    ...(process.env.JMP_REAL_DEBUG_PORT
+      ? [
+          `--remote-debugging-port=${process.env.JMP_REAL_DEBUG_PORT}`,
+          "--disable-renderer-backgrounding",
+          "--disable-backgrounding-occluded-windows",
+        ]
+      : []),
   ],
   mocha: { ui: "tdd", timeout: 180_000 },
 });

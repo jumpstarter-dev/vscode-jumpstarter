@@ -2,12 +2,13 @@
  * The Web UI commands against a real lease: a real `jmp`, a real
  * `jumpstarter-web`, a real exporter. See .vscode-test.real.mjs.
  *
- * Only the last step is replaced: the link is captured instead of shown, and
- * then fetched, so the run proves the server the link points at is up, is the
- * lease's, and has the drivers the tree offered a view for.
+ * Nothing is replaced. The panels really open; the run then asks the server
+ * each one frames what a browser inside a VS Code webview would ask it, so it
+ * proves the page may be framed there and nowhere else.
  */
 
 import * as assert from "assert";
+import * as http from "http";
 import * as vscode from "vscode";
 import type { JumpstarterApi } from "../../extension";
 
@@ -27,10 +28,24 @@ async function waitFor<T>(what: string, read: () => Promise<T | undefined>, time
   }
 }
 
+/** A GET with exactly these headers (fetch adds and drops some of its own). */
+function get(
+  url: string,
+  headers: Record<string, string>,
+): Promise<{ status: number; headers: http.IncomingHttpHeaders }> {
+  return new Promise((resolve, reject) => {
+    http
+      .get(url, { headers }, (response) => {
+        response.resume();
+        resolve({ status: response.statusCode ?? 0, headers: response.headers });
+      })
+      .on("error", reject);
+  });
+}
+
 suite("web UI, for real", () => {
   let api: JumpstarterApi;
   let leaseNode: unknown;
-  const panels: string[] = [];
   const errors: string[] = [];
   let restore: () => void = () => {};
 
@@ -39,6 +54,11 @@ suite("web UI, for real", () => {
     await config.update("jmpPath", process.env.JMP_REAL_JMP, vscode.ConfigurationTarget.Global);
     await config.update("experimentalCliFeatures", true, vscode.ConfigurationTarget.Global);
     await config.update("pollIntervalSeconds", 3600, vscode.ConfigurationTarget.Global);
+    if (process.env.JMP_REAL_THEME) {
+      await vscode.workspace
+        .getConfiguration("workbench")
+        .update("colorTheme", process.env.JMP_REAL_THEME, vscode.ConfigurationTarget.Global);
+    }
 
     const extension = vscode.extensions.getExtension<JumpstarterApi>(EXTENSION_ID);
     assert.ok(extension, "the extension is not installed in the host");
@@ -58,22 +78,13 @@ suite("web UI, for real", () => {
     });
 
     const window = vscode.window as unknown as Record<string, unknown>;
-    const commands = vscode.commands as unknown as Record<string, unknown>;
-    const original = { showErrorMessage: window.showErrorMessage, executeCommand: commands.executeCommand };
+    const original = window.showErrorMessage;
     window.showErrorMessage = async (message: string) => {
       errors.push(message);
       return undefined;
     };
-    commands.executeCommand = (command: string, ...args: unknown[]) => {
-      if (command === "simpleBrowser.api.open") {
-        panels.push(String(args[0]));
-        return Promise.resolve();
-      }
-      return (original.executeCommand as (...a: unknown[]) => Thenable<unknown>).call(vscode.commands, command, ...args);
-    };
     restore = () => {
-      window.showErrorMessage = original.showErrorMessage;
-      commands.executeCommand = original.executeCommand;
+      window.showErrorMessage = original;
     };
   });
 
@@ -82,7 +93,7 @@ suite("web UI, for real", () => {
     restore();
   });
 
-  test("the lease's drivers with a plugin view offer it, and the view's server answers", async () => {
+  test("the lease's drivers with a plugin view open it in a panel the server lets be framed", async () => {
     const offered: { label: string; node: unknown }[] = [];
     const all: string[] = [];
     for (const node of (await api.trees.leases.getChildren(leaseNode)) ?? []) {
@@ -96,70 +107,57 @@ suite("web UI, for real", () => {
     assert.ok(offered.length > 0, "no driver of this lease has a plugin view");
 
     for (const { label, node } of offered) {
-      panels.length = 0;
       await vscode.commands.executeCommand("jumpstarter.leases.openDriverView", node);
       assert.deepEqual(errors, []);
-      assert.equal(panels.length, 1, `${label}: one panel`);
-      console.log(`link for ${label}: ${panels[0]}`);
+      const links = api.webUi.panelLinks();
+      console.log(`panel for ${label}: ${links[links.length - 1]}`);
     }
+    assert.equal(api.webUi.panelLinks().length, offered.length);
 
-    // The page and its API, as the panel would load them.
-    const base = panels[0].split("#")[0];
-    const page = await fetch(base);
-    assert.equal(page.status, 200);
-    assert.match(await page.text(), /<div id="root"|<script/);
-    for (const route of ["api/v1/info", "api/v1/drivers", "api/v1/plugins"]) {
-      const response = await fetch(new URL(route, base));
+    const base = api.webUi.panelLinks()[0].split("#")[0];
+    // What the frame of a webview asks: a navigation from another site, for a frame.
+    const framed = await get(base, {
+      "Sec-Fetch-Site": "cross-site",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Dest": "iframe",
+    });
+    assert.equal(framed.status, 200);
+    const policy = String(framed.headers["content-security-policy"] ?? "");
+    console.log(`policy: ${/frame-ancestors[^;]*/.exec(policy)?.[0]}`);
+    assert.match(policy, /frame-ancestors vscode-file: vscode-webview:/);
+    assert.equal(framed.headers["x-frame-options"], undefined);
+    const cookie = String(framed.headers["set-cookie"] ?? "");
+    assert.match(cookie, /SameSite=None; Secure; Partitioned/);
+    // ...and the page's own requests from inside it, with the session it was given.
+    for (const route of ["api/v1/info", "api/v1/drivers", "api/v1/plugins", "api/v1/hosting"]) {
+      const response = await get(new URL(route, base).toString(), {
+        Cookie: cookie.split(";")[0],
+        "Sec-Fetch-Site": "same-origin",
+      });
       console.log(`GET ${route} -> ${response.status}`);
       assert.equal(response.status, 200, route);
     }
-  });
-
-  test("the lease's screen and tools open narrowed", async () => {
-    panels.length = 0;
-    await vscode.commands.executeCommand("jumpstarter.leases.openWebUi", leaseNode);
-    assert.deepEqual(errors, []);
-    assert.match(panels[0], /#\/d\/\?only=hmi,appium-inspector&chrome=minimal$/);
-    console.log(`link for the lease: ${panels[0]}`);
-  });
-
-  test("VS Code's own browser shows the link in a panel beside the editor", async () => {
-    panels.length = 0;
-    await vscode.commands.executeCommand("jumpstarter.leases.openWebUi", leaseNode);
-    const link = panels[0];
-    const before = vscode.window.tabGroups.all.flatMap((group) => group.tabs).length;
-    restore(); // from here on, for real
-    restore = () => {};
-    await vscode.commands.executeCommand("simpleBrowser.api.open", link, {
-      viewColumn: vscode.ViewColumn.Beside,
+    // A page of another site, with the same cookie, is still refused.
+    const other = await get(new URL("api/v1/info", base).toString(), {
+      Cookie: cookie.split(";")[0],
+      "Sec-Fetch-Site": "cross-site",
+      Origin: "https://evil.example",
     });
-    const tab = await waitFor("a browser tab", async () => {
-      const tabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs);
-      return tabs.length > before ? tabs[tabs.length - 1] : undefined;
-    }, 20_000);
-    const input = tab.input as { viewType?: string } | undefined;
-    console.log(`tab: "${tab.label}" in column ${tab.group.viewColumn}, input ${input?.constructor?.name} ${input?.viewType ?? ""}`);
-    // Give the page a moment to load and name the tab.
-    await new Promise((resolve) => setTimeout(resolve, 4000));
-    console.log(`tab after load: "${tab.label}"`);
+    assert.equal(other.status, 403);
   });
 
-  // For looking at it: JMP_REAL_SHOW=hmi,appium opens those drivers' views for real and keeps the window up
-  // for JMP_REAL_HOLD seconds; JMP_REAL_THEME picks the colour theme the window has meanwhile.
+  // For looking at it: JMP_REAL_SHOW=hmi,appium opens those drivers' views and keeps the window up for
+  // JMP_REAL_HOLD seconds; JMP_REAL_THEME picks the colour theme the window has meanwhile.
   test("show driver views and hold the window", async function () {
     const show = (process.env.JMP_REAL_SHOW ?? "").split(",").filter((name) => name.length > 0);
     if (show.length === 0) {
       this.skip();
     }
     this.timeout(600_000);
-    restore();
-    restore = () => {};
-    if (process.env.JMP_REAL_THEME) {
-      await vscode.workspace
-        .getConfiguration("workbench")
-        .update("colorTheme", process.env.JMP_REAL_THEME, vscode.ConfigurationTarget.Global);
-    }
+    api.webUi.closePanels();
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    await vscode.commands.executeCommand("workbench.action.closeAuxiliaryBar");
+    await vscode.commands.executeCommand("notifications.clearAll");
     await vscode.commands.executeCommand("workbench.view.extension.jumpstarter");
     for (const node of (await api.trees.leases.getChildren(leaseNode)) ?? []) {
       const item = await api.trees.leases.getTreeItem(node);

@@ -126,11 +126,18 @@ export function normalizeTools(setting: unknown): string[] {
   return [...seen];
 }
 
+/**
+ * How much of the page is around the views: `minimal` keeps a title bar with
+ * the device's name (a browser tab); `none` is the views alone (a panel of
+ * this window, which has a title, tabs and a status bar itself).
+ */
+export type Chrome = "minimal" | "none";
+
 export interface WebUiLinkOptions {
   /** Show only these extensions (`only=`). Empty or absent: the full workbench. */
   tools?: readonly string[];
-  /** Show the device alone, without the page's own navigation (`chrome=minimal`). */
-  minimal?: boolean;
+  /** How much of the page's own chrome to keep; absent: all of it. */
+  chrome?: Chrome;
 }
 
 /**
@@ -146,8 +153,8 @@ export function buildWebUiLink(serverUrl: string, options: WebUiLinkOptions = {}
   if (tools.length > 0) {
     parts.push(`only=${tools.map((entry) => encodeURIComponent(entry)).join(",")}`);
   }
-  if (options.minimal) {
-    parts.push("chrome=minimal");
+  if (options.chrome) {
+    parts.push(`chrome=${options.chrome}`);
   }
   url.hash = parts.length > 0 ? `#/d/?${parts.join("&")}` : "#/d/";
   return url.toString();
@@ -158,11 +165,16 @@ export function buildWebUiLink(serverUrl: string, options: WebUiLinkOptions = {}
  * front, and only its plugin's parts around it (an Inspector keeps its panel;
  * the lease's other screens and terminals are left out).
  */
-export function buildDriverViewLink(serverUrl: string, driverPath: readonly string[], view: WebView): string {
+export function buildDriverViewLink(
+  serverUrl: string,
+  driverPath: readonly string[],
+  view: WebView,
+  chrome: Chrome = "minimal",
+): string {
   const url = new URL(serverUrl);
   const path = driverPath.map((segment) => encodeURIComponent(segment)).join("/");
   const instance = encodeURIComponent(`${view.id}#${driverPath.join("/")}`);
-  url.hash = `#/d/${path}?view=${instance}&only=${encodeURIComponent(view.plugin)}&chrome=minimal`;
+  url.hash = `#/d/${path}?view=${instance}&only=${encodeURIComponent(view.plugin)}&chrome=${chrome}`;
   return url.toString();
 }
 
@@ -174,6 +186,11 @@ export interface ServeOptions {
    * itself (a forwarded port in a remote window, a Che endpoint).
    */
   publicUrl?: string;
+  /**
+   * What may show the page in a frame: origins, or an application's scheme
+   * (`vscode-webview:` for a panel of a desktop window).
+   */
+  frameOrigins?: readonly string[];
 }
 
 /**
@@ -188,6 +205,9 @@ export function buildServeArgs(options: ServeOptions): string[] {
   const args = ["serve", "--host", "127.0.0.1", "--port", String(options.port)];
   if (options.publicUrl) {
     args.push("--public-url", options.publicUrl, "--auth", "token");
+  }
+  for (const origin of options.frameOrigins ?? []) {
+    args.push("--allowed-frame-origin", origin);
   }
   return args;
 }
@@ -215,6 +235,30 @@ export function resolveWebCommand(
   }
   const beside = path.join(path.dirname(jmp.command), "jumpstarter-web");
   return [exists(beside) ? beside : "jumpstarter-web"];
+}
+
+/** An entry of the frame origins setting the server will take: an http(s) origin, or a scheme with its colon. */
+const FRAME_ORIGIN = /^(?:[a-z][a-z0-9+.-]*:|https?:\/\/[a-z0-9.-]+(?::\d{1,5})?)$/;
+
+/**
+ * What frames a panel in a desktop window. Every ancestor of a frame has to
+ * be allowed, and there are two: the webview's own document, and the window
+ * the webview is part of.
+ */
+export const DESKTOP_FRAME_ORIGINS: readonly string[] = ["vscode-webview:", "vscode-file:"];
+
+/** The frame origins setting as a clean list; anything the server would refuse is left out. */
+export function normalizeFrameOrigins(setting: unknown): string[] {
+  if (!Array.isArray(setting)) {
+    return [...DESKTOP_FRAME_ORIGINS];
+  }
+  const seen = new Set<string>();
+  for (const value of setting) {
+    if (typeof value === "string" && FRAME_ORIGIN.test(value.trim().toLowerCase())) {
+      seen.add(value.trim().toLowerCase());
+    }
+  }
+  return [...seen];
 }
 
 /** The origin (`scheme://host[:port]`) of a URL, as `--public-url` wants it. */
