@@ -132,7 +132,7 @@ const lease = {
   effective_begin_time: "2026-01-01T00:00:00Z",
   effective_end_time: null,
   begin_time: "2026-01-01T00:00:00Z",
-  tags: { "jumpstarter.dev/created-by": "vscode" },
+  tags: { "created-by": "vscode" },
   context: {},
   conditions: [],
   status: "In-Use",

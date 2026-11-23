@@ -74,9 +74,12 @@ export interface RunResult {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+/** How long the answer to a local read serves the other views of the same refresh. */
+const SHARED_READ_MS = 5_000;
 
 export class JmpService implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly sharedReads = new Map<string, { value: Promise<unknown>; until: number }>();
 
   private readonly interpreterEmitter = new vscode.EventEmitter<void>();
   /** Fires when the active Python environment or jmpPath setting changes. */
@@ -176,6 +179,8 @@ export class JmpService implements vscode.Disposable {
 
   /** Probe `jmp version -o json` and recompute capability flags. */
   async probe(): Promise<JmpAvailability> {
+    // (another interpreter may be another jmp, with other answers)
+    this.forgetSharedReads();
     // Probes can overlap (activation, a settings change, an interpreter change) and one of a slow CLI can end
     // after one that started later: only the answer of the latest probe says what is available now.
     const mine = ++this.probes;
@@ -418,7 +423,7 @@ export class JmpService implements vscode.Disposable {
 
   /**
    * `jmp create lease ... -o name`. Tags always include
-   * jumpstarter.dev/created-by=vscode. Resolves to the new lease name.
+   * created-by=vscode. Resolves to the new lease name.
    * Lease acquisition can block while waiting for an exporter, so the
    * timeout is generous.
    */
@@ -439,9 +444,51 @@ export class JmpService implements vscode.Disposable {
     await this.run(protocol.buildUpdateLeaseArgs(client, name, duration));
   }
 
-  /** `jmp config client list -o json` — tokens come back REDACTED; keep it that way. */
+  /**
+   * `jmp config client list -o json` — tokens come back REDACTED; keep it that way.
+   *
+   * Shared: every view asks for it on every refresh (see `sharedRead`).
+   */
   listClients(): Promise<ClientConfigList> {
-    return this.runJson<ClientConfigList>(protocol.buildListClientsArgs());
+    return this.sharedRead("clients", () =>
+      this.runJson<ClientConfigList>(protocol.buildListClientsArgs()),
+    );
+  }
+
+  /**
+   * One answer for the views that ask the same local question in the same refresh.
+   *
+   * The client list and a client's auth status are read from the config
+   * directory, and each view (clients, leases, exporters, status bar) asks for
+   * both whenever it refreshes: four `jmp` processes each, for one answer. A
+   * call made while another is running, or within `SHARED_READ_MS` of its
+   * answer, gets that answer. `forgetSharedReads` drops them when the config
+   * directory changes; a failure is never kept.
+   */
+  private sharedRead<T>(key: string, read: () => Promise<T>): Promise<T> {
+    const known = this.sharedReads.get(key);
+    if (known && Date.now() < known.until) {
+      return known.value as Promise<T>;
+    }
+    const value = read();
+    const entry = { value, until: Number.POSITIVE_INFINITY };
+    this.sharedReads.set(key, entry);
+    value.then(
+      () => {
+        entry.until = Date.now() + SHARED_READ_MS;
+      },
+      () => {
+        if (this.sharedReads.get(key) === entry) {
+          this.sharedReads.delete(key);
+        }
+      },
+    );
+    return value;
+  }
+
+  /** Read the client list and auth status afresh next time (the config directory changed). */
+  forgetSharedReads(): void {
+    this.sharedReads.clear();
   }
 
   /**
@@ -466,17 +513,27 @@ export class JmpService implements vscode.Disposable {
 
   /** `jmp config client use <alias>` */
   async useClient(alias: string): Promise<void> {
-    await this.run(protocol.buildUseClientArgs(alias));
+    try {
+      await this.run(protocol.buildUseClientArgs(alias));
+    } finally {
+      this.forgetSharedReads();
+    }
   }
 
   /** `jmp config client delete <alias>` */
   async deleteClientConfig(alias: string): Promise<void> {
-    await this.run(protocol.buildDeleteClientArgs(alias));
+    try {
+      await this.run(protocol.buildDeleteClientArgs(alias));
+    } finally {
+      this.forgetSharedReads();
+    }
   }
 
   /** `jmp auth status --client <client> -o json` — local check, never interactive. */
   authStatus(client: string): Promise<AuthStatus> {
-    return this.runJson<AuthStatus>(protocol.buildAuthStatusArgs(client));
+    return this.sharedRead(`auth:${client}`, () =>
+      this.runJson<AuthStatus>(protocol.buildAuthStatusArgs(client)),
+    );
   }
 
   /**

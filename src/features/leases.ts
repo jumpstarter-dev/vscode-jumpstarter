@@ -123,7 +123,8 @@ export function registerLeases(
       restart();
     }),
     // A lease acquired from the Exporters view belongs here immediately.
-    services.onDidChangeLeases(() => void poller.refreshNow()),
+    // (and its status settles over the next seconds: Waiting, then In-Use)
+    services.onDidChangeLeases(() => void poller.watch()),
   );
 
   // Live remaining-time countdown between polls; pure re-render.
@@ -375,6 +376,7 @@ export function registerLeases(
 
   context.subscriptions.push(
     vscode.commands.registerCommand("jumpstarter.leases.refresh", () => {
+      jmp.forgetSharedReads(); // asked for by hand: read everything again
       poller.start();
       return poller.refreshNow();
     }),

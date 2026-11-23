@@ -485,7 +485,10 @@ export function registerAdmin(
   const poller = services.createPoller({
     name: "admin",
     tick: () => provider.tick(),
-    intervalSeconds: () => Math.max(30, configuredPollIntervalSeconds() * 2),
+    intervalSeconds: () => {
+      const seconds = configuredPollIntervalSeconds();
+      return seconds > 0 ? Math.max(30, seconds * 2) : 0;
+    },
   });
   provider.poller = poller;
   context.subscriptions.push(poller);
@@ -532,6 +535,7 @@ export function registerAdmin(
 
   context.subscriptions.push(
     vscode.commands.registerCommand("jumpstarter.admin.refresh", async () => {
+      services.jmp.forgetSharedReads(); // asked for by hand: read everything again
       if (await probe()) {
         await poller.refreshNow();
       }

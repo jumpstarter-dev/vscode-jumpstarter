@@ -288,7 +288,10 @@ export function registerClients(
   };
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("jumpstarter.clients.refresh", () => poller.refreshNow()),
+    vscode.commands.registerCommand("jumpstarter.clients.refresh", () => {
+      services.jmp.forgetSharedReads(); // asked for by hand: read everything again
+      return poller.refreshNow();
+    }),
 
     vscode.commands.registerCommand(
       "jumpstarter.useClient",

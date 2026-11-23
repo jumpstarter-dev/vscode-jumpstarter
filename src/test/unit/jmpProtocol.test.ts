@@ -83,6 +83,20 @@ test("summarizeStderr picks the error line", () => {
   assert.equal(summarizeStderr(""), "jmp failed");
 });
 
+test("summarizeStderr gives the reason of a gRPC failure, not its first line", () => {
+  const s = [
+    "Error: grpc error (Caused by: <AioRpcError of RPC that terminated with:",
+    "\tstatus = StatusCode.INVALID_ARGUMENT",
+    '\tdetails = "invalid lease tags: tag key "jumpstarter.dev/created-by" must not use reserved prefix"',
+    '\tdebug_error_string = "INVALID_ARGUMENT:invalid lease tags"',
+    ">)",
+  ].join("\n");
+  assert.equal(
+    summarizeStderr(s),
+    'invalid lease tags: tag key "jumpstarter.dev/created-by" must not use reserved prefix (INVALID_ARGUMENT)',
+  );
+});
+
 test("extractWarnings splits non-empty lines", () => {
   assert.deepEqual(extractWarnings("a\n\n b \r\n"), ["a", "b"]);
   assert.deepEqual(extractWarnings(""), []);
@@ -136,7 +150,7 @@ test("createLease adds the created-by tag and -o name", () => {
   assert.ok(args.includes("-n") && args.includes("rpi4-01"));
   assert.ok(args.includes("--duration") && args.includes("30m"));
   assert.ok(args.includes("purpose=ci"));
-  assert.ok(args.includes("jumpstarter.dev/created-by=vscode"));
+  assert.ok(args.includes("created-by=vscode"));
   assert.deepEqual(args.slice(-2), ["-o", "name"]);
 });
 

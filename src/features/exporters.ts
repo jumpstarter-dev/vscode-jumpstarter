@@ -565,7 +565,8 @@ export function registerExporters(
   context.subscriptions.push(
     // Ending a lease frees or recycles an exporter, so this view is stale
     // until it re-reads — do not make the user wait out the poll interval.
-    services.onDidChangeLeases(() => void poller.refreshNow()),
+    // (an exporter's status follows its lease over the next seconds)
+    services.onDidChangeLeases(() => void poller.watch()),
     treeView.onDidChangeVisibility((e) => poller.setVisible(e.visible)),
   );
   poller.setVisible(treeView.visible);
@@ -689,6 +690,7 @@ export function registerExporters(
   context.subscriptions.push(
     // View-title refresh button.
     vscode.commands.registerCommand("jumpstarter.exporters.refresh", () => {
+      services.jmp.forgetSharedReads(); // asked for by hand: read everything again
       poller.start();
       return poller.refreshNow();
     }),

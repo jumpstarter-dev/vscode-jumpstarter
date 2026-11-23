@@ -45,6 +45,8 @@ export function activate(context: vscode.ExtensionContext): JumpstarterApi {
 
   const jmp = new JmpService(output);
   const configWatcher = new ConfigWatcher();
+  // (first, so that the views that refresh on the same event read the changed files)
+  context.subscriptions.push(configWatcher.onDidChangeConfig(() => jmp.forgetSharedReads()));
   const statusBar = new StatusBarManager(jmp);
   context.subscriptions.push(jmp, configWatcher, statusBar);
 

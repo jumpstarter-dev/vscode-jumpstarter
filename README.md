@@ -156,7 +156,7 @@ leaseholder in the tooltip.
 ### Leases view
 
 Your leases with live remaining-time countdowns. Leases created from
-VS Code are tagged `jumpstarter.dev/created-by=vscode` and marked with a ⚡
+VS Code are tagged `created-by=vscode` and marked with a ⚡
 icon.
 
 - **Open Shell in Lease** — a terminal attached to the lease
@@ -297,7 +297,7 @@ and every run pays the lease-acquisition wait.
 lease rows in the Leases view) fixes that:
 
 1. Pick a client and an active lease (rows you created from the extension are
-   tagged `jumpstarter.dev/created-by=vscode`).
+   tagged `created-by=vscode`).
 2. The extension exports two environment variables into the workspace via
    VS Code's `EnvironmentVariableCollection`:
    - `JMP_LEASE=<lease name>` — the jumpstarter client library's attach hook.
@@ -359,7 +359,7 @@ managed by the extension.
 | `jumpstarter.jmpPath` | `""` | Path to a `jmp` executable. When set, it is invoked directly instead of resolving `jumpstarter_cli` from the active Python environment. |
 | `jumpstarter.kubectlPath` | `"kubectl"` | Executable used for manifest apply/validation when experimental `jmp admin apply` is unavailable. |
 | `jumpstarter.experimentalCliFeatures` | `false` | Enable CLI APIs still on `ide-cli-integration` (driver schemas, driver browsing, exporter-set administration, and `jmp admin apply` instead of `kubectl`). |
-| `jumpstarter.pollIntervalSeconds` | `15` | How often (in seconds) the Jumpstarter views poll the controller for exporters and leases (minimum 5). The Administration view polls at half this rate, and never faster than every 30s. |
+| `jumpstarter.pollIntervalSeconds` | `0` | Poll the controller for exporters and leases in the background, this often (in seconds, 5 at least; the Administration view at half the rate, and never faster than every 30s). `0` is no background polling: the views are read when they are shown, when the window regains focus, when you refresh them, and every 5 seconds for two minutes after a lease is acquired or released. |
 | `jumpstarter.webUi.tools` | unset | What **Open Screen** shows of a lease. Unset: the lease's screen alone. Set: the Jumpstarter Web plugin ids, view ids (`hmi/screen`) or kinds of centre view (`@display`, `@tool`, `@terminal`) it names, together in one tab; an empty list is the whole workbench. |
 | `jumpstarter.webUi.openIn` | `"panel"` | Where a lease's screen and tools, and a driver's view, open: `panel` (beside the editor, themed like the window) or `browser` (the system browser). |
 | `jumpstarter.webUi.frameOrigins` | unset | What may show Jumpstarter Web in a frame (`jumpstarter-web serve --allowed-frame-origin`). Unset: a panel of a desktop window, or what `JUMPSTARTER_WEB_FRAME_ORIGINS` names (a workspace in the browser: the origin its editor is served from). |

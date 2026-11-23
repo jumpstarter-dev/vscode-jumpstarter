@@ -62,7 +62,7 @@ suite("leases", () => {
     ]);
     // Leases made from the extension are marked so the views can badge them.
     assert.ok(
-      call.some((arg) => arg === "jumpstarter.dev/created-by=vscode"),
+      call.some((arg) => arg === "created-by=vscode"),
       call.join(" "),
     );
     assert.deepEqual(call.slice(-2), ["-o", "name"]);

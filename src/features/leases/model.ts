@@ -14,7 +14,11 @@ import {
   LeaseStatus,
   leaseRemainingSeconds,
 } from "../../types";
-import { CREATED_BY_TAG_KEY, CREATED_BY_TAG_VALUE } from "../../services/jmpProtocol";
+import {
+  CREATED_BY_TAG_KEY,
+  CREATED_BY_TAG_VALUE,
+  LEGACY_CREATED_BY_TAG_KEY,
+} from "../../services/jmpProtocol";
 
 // ---------------------------------------------------------------------------
 // Descriptors (plain data; provider.ts turns them into TreeItems)
@@ -108,9 +112,13 @@ export function formatRemaining(seconds: number | null): string {
   return `${formatSpan(seconds)} left`;
 }
 
-/** True when the lease carries the jumpstarter.dev/created-by=vscode tag. */
+/** True when the lease carries the created-by=vscode tag (under its current or its earlier key). */
 export function isVscodeCreated(lease: Lease): boolean {
-  return (lease.tags ?? {})[CREATED_BY_TAG_KEY] === CREATED_BY_TAG_VALUE;
+  const tags = lease.tags ?? {};
+  return (
+    tags[CREATED_BY_TAG_KEY] === CREATED_BY_TAG_VALUE ||
+    tags[LEGACY_CREATED_BY_TAG_KEY] === CREATED_BY_TAG_VALUE
+  );
 }
 
 /** Whether the lease is still active (shellable / extendable / releasable). */

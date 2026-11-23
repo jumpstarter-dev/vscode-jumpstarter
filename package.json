@@ -733,9 +733,9 @@
         },
         "jumpstarter.pollIntervalSeconds": {
           "type": "number",
-          "default": 15,
-          "minimum": 5,
-          "description": "How often (in seconds) the Jumpstarter views poll the controller for exporters and leases."
+          "default": 0,
+          "minimum": 0,
+          "description": "Poll the controller for exporters and leases in the background, this often (in seconds, 5 at least). 0, the default, is no background polling: the views are read when they are shown, when the window regains focus, when you refresh them, and for two minutes after a lease is acquired or released."
         },
         "jumpstarter.webUi.tools": {
           "type": [

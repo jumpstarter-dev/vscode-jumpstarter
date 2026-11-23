@@ -1,11 +1,15 @@
 /**
- * Poller — interval polling with focus-refresh and pause-when-hidden.
+ * Poller — refreshes a view when there is a reason to, and polls only while something is happening.
  *
  * Each feature creates its own Poller around a `tick` callback. The poller:
- *  - fires `tick` every `intervalSeconds()` seconds while started AND visible
- *    AND the VS Code window is focused (unfocused windows keep a slow 4x
- *    interval so data does not go completely stale);
- *  - fires an immediate refresh when the window regains focus;
+ *  - fires `tick` on demand: when it starts, when its view is shown, when the
+ *    window regains focus, and whenever `refreshNow()` is called (a refresh
+ *    button, a changed config file, a lease the extension just changed);
+ *  - polls for a while after `watch()`: right after a lease is acquired or
+ *    released, when what the controller says is still changing;
+ *  - polls all the time only if the user asks for it (`intervalSeconds()`
+ *    above zero: the jumpstarter.pollIntervalSeconds setting), while started
+ *    AND visible, four times slower while the window is unfocused;
  *  - pauses entirely while `setVisible(false)` (wire it to the tree view's
  *    onDidChangeVisibility);
  *  - never overlaps ticks — refreshes during a tick coalesce into one follow-up;
@@ -21,9 +25,9 @@ export interface PollerOptions {
   /** Called every poll and on refreshNow(); may be async. */
   tick: () => Promise<void> | void;
   /**
-   * Current interval in seconds, read before every schedule so setting
-   * changes apply immediately. Defaults to the jumpstarter.pollIntervalSeconds
-   * setting (15s) when omitted.
+   * Seconds between background polls, read before every schedule so setting
+   * changes apply immediately; zero is none. Defaults to the
+   * jumpstarter.pollIntervalSeconds setting (0) when omitted.
    */
   intervalSeconds?: () => number;
   /** For log messages. */
@@ -33,9 +37,13 @@ export interface PollerOptions {
 export function configuredPollIntervalSeconds(): number {
   const v = vscode.workspace
     .getConfiguration("jumpstarter")
-    .get<number>("pollIntervalSeconds", 15);
-  return Math.max(5, v);
+    .get<number>("pollIntervalSeconds", 0);
+  return v > 0 ? Math.max(5, v) : 0;
 }
+
+/** How often a watched view is read again, and for how long (see `Poller.watch`). */
+export const WATCH_INTERVAL_SECONDS = 5;
+export const WATCH_SECONDS = 120;
 
 export class Poller implements vscode.Disposable {
   private readonly tick: () => Promise<void> | void;
@@ -48,6 +56,7 @@ export class Poller implements vscode.Disposable {
   private focused: boolean;
   private inFlight: Promise<void> | undefined;
   private refreshRequested = false;
+  private watchUntil = 0;
   private readonly disposables: vscode.Disposable[] = [];
 
   private readonly tickErrorEmitter = new vscode.EventEmitter<unknown>();
@@ -109,6 +118,15 @@ export class Poller implements vscode.Disposable {
     }
   }
 
+  /**
+   * Something just changed and is still settling (a lease was asked for, or
+   * given back): refresh now, and keep reading every few seconds for a while.
+   */
+  watch(seconds = WATCH_SECONDS): Promise<void> {
+    this.watchUntil = Math.max(this.watchUntil, Date.now() + seconds * 1000);
+    return this.refreshNow();
+  }
+
   /** Refresh and wait for queued updates too, rather than dropping a changed setting. */
   refreshNow(): Promise<void> {
     this.clearTimer();
@@ -140,10 +158,19 @@ export class Poller implements vscode.Disposable {
     if (!this.started || !this.visible) {
       return;
     }
-    let seconds = Math.max(5, this.intervalSeconds());
-    if (!this.focused) {
-      // Back off while the window is unfocused.
-      seconds *= 4;
+    let seconds: number;
+    if (Date.now() < this.watchUntil) {
+      seconds = WATCH_INTERVAL_SECONDS;
+    } else {
+      seconds = this.intervalSeconds();
+      if (seconds <= 0) {
+        return; // on demand only
+      }
+      seconds = Math.max(5, seconds);
+      if (!this.focused) {
+        // Back off while the window is unfocused.
+        seconds *= 4;
+      }
     }
     this.timer = setTimeout(() => void this.refreshNow(), seconds * 1000);
   }

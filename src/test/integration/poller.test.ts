@@ -36,6 +36,28 @@ suite("poller refresh coordination", () => {
     }
   });
 
+  test("nothing is read in the background, except for a while after watch()", async () => {
+    let ticks = 0;
+    const poller = new Poller({ tick: () => void ticks++, intervalSeconds: () => 0 });
+    const scheduled = () => (poller as unknown as { timer?: unknown }).timer !== undefined;
+    try {
+      poller.start();
+      await poller.refreshNow();
+      assert.ok(ticks >= 1);
+      assert.equal(scheduled(), false, "on demand: no poll is waiting");
+
+      await poller.watch();
+      assert.equal(scheduled(), true, "watching: the next poll is waiting");
+
+      await poller.watch(0);
+      (poller as unknown as { watchUntil: number }).watchUntil = 0;
+      await poller.refreshNow();
+      assert.equal(scheduled(), false, "the watch is over: on demand again");
+    } finally {
+      poller.dispose();
+    }
+  });
+
   test("stopping on an auth failure cancels an already queued refresh", async () => {
     let release!: () => void;
     const blocked = new Promise<void>((resolve) => { release = resolve; });

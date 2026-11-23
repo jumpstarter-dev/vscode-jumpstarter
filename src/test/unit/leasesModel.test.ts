@@ -99,6 +99,8 @@ test("formatRemaining: positive, negative and null", () => {
 
 test("isVscodeCreated: only the created-by=vscode tag counts", () => {
   assert.equal(isVscodeCreated(makeLease()), false);
+  assert.equal(isVscodeCreated(makeLease({ tags: { "created-by": "vscode" } })), true);
+  // (the key of earlier versions)
   assert.equal(
     isVscodeCreated(makeLease({ tags: { "jumpstarter.dev/created-by": "vscode" } })),
     true,

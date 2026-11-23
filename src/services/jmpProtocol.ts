@@ -119,9 +119,21 @@ export function classifyError(
   return "unknown";
 }
 
-/** First line of stderr that looks like an error, for human display. */
+/**
+ * What went wrong, for human display.
+ *
+ * A gRPC failure is printed over several lines, and its first one ends where
+ * the reason begins ("Error: grpc error (Caused by: <AioRpcError ...:"): the
+ * reason is the `details = "..."` line, so that is what is shown. Otherwise
+ * the first line of stderr that looks like an error.
+ */
 export function summarizeStderr(stderrText: string): string {
   const lines = stderrText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  const details = /^\s*details\s*=\s*"(.*)"\s*$/m.exec(stderrText);
+  if (details && details[1].trim().length > 0) {
+    const status = /^\s*status\s*=\s*StatusCode\.(\w+)\s*$/m.exec(stderrText);
+    return status ? `${details[1]} (${status[1]})` : details[1];
+  }
   const errLine = lines.find((l) => /error/i.test(l));
   return (errLine ?? lines[lines.length - 1] ?? "jmp failed").trim();
 }
@@ -159,8 +171,15 @@ export function parseJsonOutput<T>(stdout: string, args: readonly string[]): T {
 // Argument construction
 // ---------------------------------------------------------------------------
 
-/** Tag automatically applied to every lease created by the extension. */
-export const CREATED_BY_TAG_KEY = "jumpstarter.dev/created-by";
+/**
+ * Tag automatically applied to every lease created by the extension.
+ *
+ * The key has no prefix: the controller keeps `jumpstarter.dev/` for itself
+ * and refuses a lease that is tagged with it.
+ */
+export const CREATED_BY_TAG_KEY = "created-by";
+/** The key earlier versions used; leases that carry it are still recognised. */
+export const LEGACY_CREATED_BY_TAG_KEY = "jumpstarter.dev/created-by";
 export const CREATED_BY_TAG_VALUE = "vscode";
 
 export interface CreateLeaseOptions {
