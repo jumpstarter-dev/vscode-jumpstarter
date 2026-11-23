@@ -17,7 +17,7 @@
     "url": "https://github.com/jumpstarter-dev/vscode-jumpstarter.git"
   },
   "engines": {
-    "vscode": "^1.98.0"
+    "vscode": "^1.101.0"
   },
   "categories": [
     "Other"
@@ -79,7 +79,7 @@
       },
       {
         "command": "jumpstarter.addClient",
-        "title": "Add Client…",
+        "title": "Add Client\u2026",
         "category": "Jumpstarter",
         "icon": "$(add)"
       },
@@ -156,7 +156,7 @@
       },
       {
         "command": "jumpstarter.leaseBySelector",
-        "title": "Lease by Label Selector…",
+        "title": "Lease by Label Selector\u2026",
         "category": "Jumpstarter",
         "icon": "$(add)"
       },
@@ -168,7 +168,7 @@
       },
       {
         "command": "jumpstarter.connectDirect",
-        "title": "Connect to Exporter Directly…",
+        "title": "Connect to Exporter Directly\u2026",
         "category": "Jumpstarter",
         "icon": "$(plug)"
       },
@@ -227,7 +227,7 @@
       },
       {
         "command": "jumpstarter.leases.extend",
-        "title": "Extend Lease…",
+        "title": "Extend Lease\u2026",
         "category": "Jumpstarter"
       },
       {
@@ -276,7 +276,7 @@
       },
       {
         "command": "jumpstarter.admin.setNamespace",
-        "title": "Administer Namespace…",
+        "title": "Administer Namespace\u2026",
         "category": "Jumpstarter",
         "icon": "$(symbol-namespace)"
       },
@@ -288,7 +288,7 @@
       },
       {
         "command": "jumpstarter.admin.newResource",
-        "title": "New Cluster Resource…",
+        "title": "New Cluster Resource\u2026",
         "category": "Jumpstarter",
         "icon": "$(add)"
       },
@@ -306,13 +306,13 @@
       },
       {
         "command": "jumpstarter.importClientConfig",
-        "title": "Import Client Config from Cluster…",
+        "title": "Import Client Config from Cluster\u2026",
         "category": "Jumpstarter",
         "icon": "$(cloud-download)"
       },
       {
         "command": "jumpstarter.importExporterConfig",
-        "title": "Import Exporter Config from Cluster…",
+        "title": "Import Exporter Config from Cluster\u2026",
         "category": "Jumpstarter",
         "icon": "$(cloud-download)"
       },
@@ -778,15 +778,34 @@
             "type": "string"
           },
           "default": {},
-          "markdownDescription": "Ports of this machine that have an address of their own, as `{\"7071\": \"https://…\"}`, for a workspace in the browser (Eclipse Che, code-server) where the browser cannot reach the machine's loopback. Jumpstarter Web then listens on one of them for each lease whose views are open. Empty, the environment variable `JUMPSTARTER_WEB_ENDPOINTS` (`7071=https://…,7072=https://…`) is read; without either, a free loopback port is used."
+          "markdownDescription": "Ports of this machine that have an address of their own, as `{\"7071\": \"https://\u2026\"}`, for a workspace in the browser (Eclipse Che, code-server) where the browser cannot reach the machine's loopback. Jumpstarter Web then listens on one of them for each lease whose views are open. Empty, the environment variable `JUMPSTARTER_WEB_ENDPOINTS` (`7071=https://\u2026,7072=https://\u2026`) is read; without either, a free loopback port is used."
         },
         "jumpstarter.webUi.path": {
           "type": "string",
           "default": "",
           "markdownDescription": "Path to a `jumpstarter-web` executable. When empty, it is taken from the environment `jmp` runs from."
+        },
+        "jumpstarter.mcp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Offer Jumpstarter's MCP server (`jmp mcp serve`) to the agents of this editor, so they can lease devices and use their drivers. It runs with the same `jmp` as the views; it needs the `jumpstarter-mcp` package installed beside it."
         }
       }
-    }
+    },
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "jumpstarter.mcp",
+        "label": "Jumpstarter"
+      }
+    ],
+    "chatSkills": [
+      {
+        "path": "./agent-plugin/skills/jumpstarter-devices/SKILL.md"
+      },
+      {
+        "path": "./agent-plugin/skills/jumpstarter-robot-tests/SKILL.md"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "pnpm run package",
@@ -808,7 +827,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
-    "@types/vscode": "^1.98.0",
+    "@types/vscode": "~1.101.0",
     "@typescript-eslint/eslint-plugin": "^8.25.0",
     "@typescript-eslint/parser": "^8.25.0",
     "@vscode/test-cli": "^0.0.15",

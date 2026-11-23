@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "jumpstarter",
+  "version": "0.0.1",
+  "description": "Lease hardware devices through Jumpstarter and use their drivers: power, serial, storage, screen, Appium. Skills for working with devices and for writing Robot Framework suites against them, and Jumpstarter's MCP server.",
+  "homepage": "https://jumpstarter.dev",
+  "repository": "https://github.com/jumpstarter-dev/vscode-jumpstarter",
+  "license": "Apache-2.0",
+  "keywords": ["jumpstarter", "hardware", "testing", "robot-framework", "mcp"]
+}

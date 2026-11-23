@@ -218,6 +218,23 @@ instead.
 Which drivers have a view is read from `jumpstarter-web plugins -o json`; with
 a Jumpstarter Web that predates that command, use the lease-level commands.
 
+### Agents: Jumpstarter's MCP tools and skills
+
+An agent in the editor's chat can work with devices as you do, with nothing to configure:
+
+* **MCP server.** The extension registers Jumpstarter's MCP server (`jmp mcp serve`) with the editor, with the same
+  `jmp` the views use (the selected interpreter's, `jumpstarter.jmpPath`, or the one on `PATH`), so an agent sees your
+  clients, exporters and leases. It is offered when that `jmp` has the `mcp` command (the `jumpstarter-mcp` package);
+  `jumpstarter.mcp.enabled` turns it off. It appears under "MCP: List Servers" as **Jumpstarter**. 
+* **Skills.** Two [agent skills](https://code.visualstudio.com/docs/agent-customization/agent-skills) come with the
+  extension: `jumpstarter-devices` (leasing a device and using its drivers through the MCP tools) and
+  `jumpstarter-robot-tests` (Robot Framework suites against leased devices).
+
+This reaches the agents that use the editor's own MCP registry and skills (GitHub Copilot's chat). An agent extension
+that keeps a configuration of its own does not read either; for those, and for GitHub Copilot CLI, the same content is
+the [agent plugin](agent-plugin/README.md) in this repository ([Agent Plugins 1.0](https://agent-plugins.org/specification)).
+VS Code has no way for an extension to install an agent plugin, so the extension contributes the plugin's parts itself.
+
 ### Administration view
 
 Appears only when this machine can actually administer a cluster: a kubeconfig
@@ -346,6 +363,7 @@ managed by the extension.
 | `jumpstarter.webUi.tools` | unset | What **Open Screen** shows of a lease. Unset: the lease's screen alone. Set: the Jumpstarter Web plugin ids, view ids (`hmi/screen`) or kinds of centre view (`@display`, `@tool`, `@terminal`) it names, together in one tab; an empty list is the whole workbench. |
 | `jumpstarter.webUi.openIn` | `"panel"` | Where a lease's screen and tools, and a driver's view, open: `panel` (beside the editor, themed like the window) or `browser` (the system browser). |
 | `jumpstarter.webUi.frameOrigins` | unset | What may show Jumpstarter Web in a frame (`jumpstarter-web serve --allowed-frame-origin`). Unset: a panel of a desktop window, or what `JUMPSTARTER_WEB_FRAME_ORIGINS` names (a workspace in the browser: the origin its editor is served from). |
+| `jumpstarter.mcp.enabled` | `true` | Offer Jumpstarter's MCP server (`jmp mcp serve`) to the agents of this editor. It runs with the same `jmp` as the views and needs the `jumpstarter-mcp` package beside it. |
 | `jumpstarter.webUi.endpoints` | `{}` | For a workspace in the browser (Eclipse Che, code-server): ports of the container that have an address of their own, `{"7071": "https://…"}`. Jumpstarter Web listens on one for each lease whose views are open. Empty: `JUMPSTARTER_WEB_ENDPOINTS` (`7071=https://…,…`), else a loopback port. |
 | `jumpstarter.webUi.path` | `""` | Path to a `jumpstarter-web` executable. Empty takes it from the environment `jmp` runs from. |
 | `jumpstarter.admin.namespace` | `""` | Namespace the Administration view reads. Empty follows the current client config's namespace. |

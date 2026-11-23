@@ -19,8 +19,8 @@ importers:
         specifier: 20.x
         version: 20.17.24
       '@types/vscode':
-        specifier: ^1.98.0
-        version: 1.98.0
+        specifier: ~1.101.0
+        version: 1.101.0
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.25.0
         version: 8.26.0(@typescript-eslint/parser@8.26.0(eslint@9.22.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.8.2))(eslint@9.22.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.8.2)
@@ -450,8 +450,8 @@ packages:
   '@types/sarif@2.1.7':
     resolution: {integrity: sha512-kRz0VEkJqWLf1LLVN4pT1cg1Z9wAuvI6L97V3m2f5B76Tg8d413ddvLBPTEHAZJlnn4XSvu0FkZtViCQGVyrXQ==}
 
-  '@types/vscode@1.98.0':
-    resolution: {integrity: sha512-+KuiWhpbKBaG2egF+51KjbGWatTH5BbmWQjSLMDCssb4xF8FJnW4nGH4nuAdOOfMbpD0QlHtI+C3tPq+DoKElg==}
+  '@types/vscode@1.101.0':
+    resolution: {integrity: sha512-ZWf0IWa+NGegdW3iU42AcDTFHWW7fApLdkdnBqwYEtHVIBGbTu0ZNQKP/kX3Ds/uMJXIMQNAojHR4vexCEEz5Q==}
 
   '@typescript-eslint/eslint-plugin@8.26.0':
     resolution: {integrity: sha512-cLr1J6pe56zjKYajK6SSSre6nl1Gj6xDp1TY0trpgPzjVbgDwd09v2Ws37LABxzkicmUjhEeg/fAUjPJJB1v5Q==}
@@ -2806,7 +2806,7 @@ snapshots:
 
   '@types/sarif@2.1.7': {}
 
-  '@types/vscode@1.98.0': {}
+  '@types/vscode@1.101.0': {}
 
   '@typescript-eslint/eslint-plugin@8.26.0(@typescript-eslint/parser@8.26.0(eslint@9.22.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.8.2))(eslint@9.22.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.8.2)':
     dependencies:

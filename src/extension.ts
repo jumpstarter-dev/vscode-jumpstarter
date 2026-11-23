@@ -10,6 +10,7 @@ import { registerClients } from "./features/clients";
 import { registerExporters } from "./features/exporters";
 import { registerLeases } from "./features/leases";
 import { registerWebUi, WebUiApi } from "./features/webUi";
+import { registerMcp, McpApi } from "./features/mcp";
 import { registerTesting } from "./features/testing";
 import { registerSchemas } from "./features/schemas";
 import { registerAdmin, resolveAdminOptions } from "./features/admin";
@@ -29,6 +30,8 @@ export interface JumpstarterApi {
   trees: Record<"clients" | "exporters" | "leases" | "admin", vscode.TreeDataProvider<unknown>>;
   /** The Jumpstarter Web servers this window started. */
   webUi: WebUiApi;
+  /** Jumpstarter's MCP server, as the editor's agents are offered it. */
+  mcp: McpApi;
   /** Re-read every view from the CLI and settle. */
   refreshAll(): Promise<void>;
 }
@@ -99,6 +102,10 @@ export function activate(context: vscode.ExtensionContext): JumpstarterApi {
   // Jumpstarter Web, served from inside the lease session)
   const webUi = registerWebUi(context, services, leasesTree);
 
+  // FEATURE REGISTRATION: MCP (Jumpstarter's MCP server, offered to the
+  // editor's agents with the jmp of the views)
+  const mcp = registerMcp(context, services);
+
   // FEATURE REGISTRATION: testing (pin a lease for test runs via JMP_LEASE)
   registerTesting(context, services);
 
@@ -123,6 +130,7 @@ export function activate(context: vscode.ExtensionContext): JumpstarterApi {
   return {
     services,
     webUi,
+    mcp,
     trees: {
       clients: clientsTree,
       exporters: exportersTree,

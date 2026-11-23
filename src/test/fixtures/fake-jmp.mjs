@@ -147,6 +147,8 @@ const adminMeta = (name, labels) => ({
 });
 
 const responses = [
+  // `jmp mcp --help` answers where jumpstarter-mcp is installed beside the CLI
+  [() => startsWith("mcp", "--help"), { usage: "jmp mcp [OPTIONS] COMMAND [ARGS]..." }],
   [() => startsWith("version"), { gitVersion: "0.10.0.dev53+gca3b4831", pythonVersion: "3.12.0 (fake)" }],
 
   [
