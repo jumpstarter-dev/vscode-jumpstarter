@@ -1,0 +1,409 @@
+{
+    "leases": [
+        {
+            "namespace": "default",
+            "name": "lease-9m2qd",
+            "selector": "",
+            "exporter_name": null,
+            "tags": {},
+            "context": {},
+            "duration": 2700.0,
+            "effective_duration": null,
+            "begin_time": null,
+            "client": "ci-runner",
+            "exporter": "",
+            "conditions": [
+                {
+                    "type": "Ready",
+                    "status": "True",
+                    "reason": "Ready"
+                }
+            ],
+            "effective_begin_time": null,
+            "effective_end_time": null,
+            "deprecated_labels": {},
+            "shared_with": [],
+            "effective_shared_with": [],
+            "members": [
+                {
+                    "name": "phone",
+                    "selector": "device-type=phone",
+                    "exporter_name": null,
+                    "optional": true,
+                    "allow_disabled": false,
+                    "excluded": false
+                },
+                {
+                    "name": "headunit",
+                    "selector": "device-type=headunit",
+                    "exporter_name": null,
+                    "optional": false,
+                    "allow_disabled": false,
+                    "excluded": false
+                }
+            ],
+            "constraints": [
+                {
+                    "member_names": [
+                        "phone",
+                        "headunit"
+                    ],
+                    "same_label": "rf-domain"
+                }
+            ],
+            "template": {
+                "template": "ivi",
+                "generation": 3
+            },
+            "member_statuses": [
+                {
+                    "name": "phone",
+                    "state": "Bound",
+                    "exporter": "rack3-phone-4",
+                    "reason": null,
+                    "message": null,
+                    "priority": 0,
+                    "spot_access": false
+                },
+                {
+                    "name": "headunit",
+                    "state": "Bound",
+                    "exporter": "rack3-hu-2",
+                    "reason": null,
+                    "message": null,
+                    "priority": 0,
+                    "spot_access": false
+                }
+            ],
+            "forwards": [
+                {
+                    "name": "bt",
+                    "endpoints": [
+                        {
+                            "member_name": "headunit",
+                            "port_name": "rootcanal"
+                        },
+                        {
+                            "member_name": "phone",
+                            "port_name": "controller"
+                        }
+                    ]
+                }
+            ],
+            "forward_statuses": [
+                {
+                    "name": "bt",
+                    "state": "Connected",
+                    "message": null,
+                    "ends": [
+                        {
+                            "member_name": "headunit",
+                            "state": "Connected",
+                            "message": null
+                        },
+                        {
+                            "member_name": "phone",
+                            "state": "Connected",
+                            "message": null
+                        }
+                    ]
+                }
+            ],
+            "status": "In-Use"
+        },
+        {
+            "namespace": "default",
+            "name": "lease-degraded",
+            "selector": "",
+            "exporter_name": null,
+            "tags": {},
+            "context": {},
+            "duration": 2700.0,
+            "effective_duration": null,
+            "begin_time": null,
+            "client": "ci-runner",
+            "exporter": "",
+            "conditions": [
+                {
+                    "type": "Ready",
+                    "status": "False",
+                    "reason": "MemberLost"
+                },
+                {
+                    "type": "Degraded",
+                    "status": "True",
+                    "reason": "MemberLost",
+                    "message": "member phone lost its exporter"
+                }
+            ],
+            "effective_begin_time": null,
+            "effective_end_time": null,
+            "deprecated_labels": {},
+            "shared_with": [],
+            "effective_shared_with": [],
+            "members": [
+                {
+                    "name": "phone",
+                    "selector": "device-type=phone",
+                    "exporter_name": null,
+                    "optional": true,
+                    "allow_disabled": false,
+                    "excluded": false
+                },
+                {
+                    "name": "headunit",
+                    "selector": "device-type=headunit",
+                    "exporter_name": null,
+                    "optional": false,
+                    "allow_disabled": false,
+                    "excluded": false
+                }
+            ],
+            "constraints": [
+                {
+                    "member_names": [
+                        "phone",
+                        "headunit"
+                    ],
+                    "same_label": "rf-domain"
+                }
+            ],
+            "template": null,
+            "member_statuses": [
+                {
+                    "name": "phone",
+                    "state": "Lost",
+                    "exporter": "rack3-phone-4",
+                    "reason": "ExporterOffline",
+                    "message": "the exporter went offline",
+                    "priority": 0,
+                    "spot_access": false
+                },
+                {
+                    "name": "headunit",
+                    "state": "Bound",
+                    "exporter": "rack3-hu-2",
+                    "reason": null,
+                    "message": null,
+                    "priority": 0,
+                    "spot_access": false
+                }
+            ],
+            "forwards": [
+                {
+                    "name": "bt",
+                    "endpoints": [
+                        {
+                            "member_name": "headunit",
+                            "port_name": "rootcanal"
+                        },
+                        {
+                            "member_name": "phone",
+                            "port_name": "controller"
+                        }
+                    ]
+                }
+            ],
+            "forward_statuses": [
+                {
+                    "name": "bt",
+                    "state": "Failed",
+                    "message": "member phone is lost",
+                    "ends": [
+                        {
+                            "member_name": "headunit",
+                            "state": "Ready",
+                            "message": null
+                        },
+                        {
+                            "member_name": "phone",
+                            "state": "Failed",
+                            "message": "the exporter went offline"
+                        }
+                    ]
+                }
+            ],
+            "status": "Degraded"
+        },
+        {
+            "namespace": "default",
+            "name": "lease-omitted",
+            "selector": "",
+            "exporter_name": null,
+            "tags": {},
+            "context": {},
+            "duration": 2700.0,
+            "effective_duration": null,
+            "begin_time": null,
+            "client": "ci-runner",
+            "exporter": "",
+            "conditions": [
+                {
+                    "type": "Ready",
+                    "status": "True",
+                    "reason": "Ready"
+                }
+            ],
+            "effective_begin_time": null,
+            "effective_end_time": null,
+            "deprecated_labels": {},
+            "shared_with": [],
+            "effective_shared_with": [],
+            "members": [
+                {
+                    "name": "phone",
+                    "selector": "device-type=phone",
+                    "exporter_name": null,
+                    "optional": true,
+                    "allow_disabled": false,
+                    "excluded": false
+                },
+                {
+                    "name": "headunit",
+                    "selector": "device-type=headunit",
+                    "exporter_name": null,
+                    "optional": false,
+                    "allow_disabled": false,
+                    "excluded": false
+                }
+            ],
+            "constraints": [
+                {
+                    "member_names": [
+                        "phone",
+                        "headunit"
+                    ],
+                    "same_label": "rf-domain"
+                }
+            ],
+            "template": {
+                "template": "ivi",
+                "generation": 3
+            },
+            "member_statuses": [
+                {
+                    "name": "phone",
+                    "state": "Omitted",
+                    "exporter": null,
+                    "reason": "Excluded",
+                    "message": null,
+                    "priority": 0,
+                    "spot_access": false
+                },
+                {
+                    "name": "headunit",
+                    "state": "Bound",
+                    "exporter": "rack3-hu-2",
+                    "reason": null,
+                    "message": null,
+                    "priority": 0,
+                    "spot_access": false
+                }
+            ],
+            "forwards": [
+                {
+                    "name": "bt",
+                    "endpoints": [
+                        {
+                            "member_name": "headunit",
+                            "port_name": "rootcanal"
+                        },
+                        {
+                            "member_name": "phone",
+                            "port_name": "controller"
+                        }
+                    ]
+                }
+            ],
+            "forward_statuses": [
+                {
+                    "name": "bt",
+                    "state": "Disabled",
+                    "message": "the member phone is left out"
+                }
+            ],
+            "status": "In-Use"
+        },
+        {
+            "namespace": "default",
+            "name": "lease-pending",
+            "selector": "",
+            "exporter_name": null,
+            "tags": {},
+            "context": {},
+            "duration": 2700.0,
+            "effective_duration": null,
+            "begin_time": null,
+            "client": "ci-runner",
+            "exporter": "",
+            "conditions": [
+                {
+                    "type": "Ready",
+                    "status": "False",
+                    "reason": "Pending"
+                }
+            ],
+            "effective_begin_time": null,
+            "effective_end_time": null,
+            "deprecated_labels": {},
+            "shared_with": [],
+            "effective_shared_with": [],
+            "members": [
+                {
+                    "name": "phone",
+                    "selector": "device-type=phone",
+                    "exporter_name": null,
+                    "optional": true,
+                    "allow_disabled": false,
+                    "excluded": false
+                },
+                {
+                    "name": "headunit",
+                    "selector": "device-type=headunit",
+                    "exporter_name": null,
+                    "optional": false,
+                    "allow_disabled": false,
+                    "excluded": false
+                }
+            ],
+            "constraints": [
+                {
+                    "member_names": [
+                        "phone",
+                        "headunit"
+                    ],
+                    "same_label": "rf-domain"
+                }
+            ],
+            "template": null,
+            "member_statuses": [],
+            "status": "Waiting"
+        },
+        {
+            "namespace": "default",
+            "name": "lease-scalar",
+            "selector": "board=rpi4",
+            "exporter_name": null,
+            "tags": {},
+            "context": {},
+            "duration": 1800.0,
+            "effective_duration": null,
+            "begin_time": null,
+            "client": "ci-runner",
+            "exporter": "bench-1",
+            "conditions": [
+                {
+                    "type": "Ready",
+                    "status": "True",
+                    "reason": "Ready"
+                }
+            ],
+            "effective_begin_time": null,
+            "effective_end_time": null,
+            "deprecated_labels": {},
+            "shared_with": [],
+            "effective_shared_with": [],
+            "status": "In-Use"
+        }
+    ]
+}

@@ -19,9 +19,20 @@
  * loudly instead of silently passing.
  */
 
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+
+/**
+ * What the real CLI printed for leases with members, lease templates and
+ * ports (fixtures/cli/README.md says how each file was made). The fake
+ * answers with them as they are, so the views are tested against the shapes
+ * the CLI has, not against shapes somebody remembered.
+ */
+const CLI_FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "cli");
+const fixtureText = (name) => readFileSync(join(CLI_FIXTURES, name), "utf8");
+const fixture = (name) => JSON.parse(fixtureText(name));
 
 /** Where the test host keeps its config tree; see .vscode-test.mjs. */
 const CONFIG_HOME = process.env.JMP_CLIENT_CONFIG_HOME ?? join(tmpdir(), "jumpstarter-fake");
@@ -66,6 +77,27 @@ if (process.env.JMP_FAKE_MAIN_ONLY && (
 )) {
   process.stderr.write("Error: experimental command is unavailable on main\n");
   process.exit(2);
+}
+
+// A `jmp` from before lease templates has no such command, and one from
+// before ports refuses `--with ports`: both are usage errors (exit 2).
+if (process.env.JMP_FAKE_NO_TEMPLATES && (
+  startsWith("get", "lease-templates") ||
+  startsWith("describe", "lease-template") ||
+  (startsWith("get", "exporters") && (valueOf("--with") ?? "").split(",").includes("ports"))
+)) {
+  process.stderr.write(
+    startsWith("get", "exporters")
+      ? "Error: Invalid value for '--with': 'ports' is not one of 'leases', 'online', 'status'.\n"
+      : `Error: No such command '${argv[1]}'.\n`,
+  );
+  process.exit(2);
+}
+
+// A newer `jmp` against a controller from before lease templates.
+if (process.env.JMP_FAKE_OLD_CONTROLLER && startsWith("get", "lease-templates")) {
+  process.stderr.write("Error: the controller is too old for lease templates: upgrade the controller\n");
+  process.exit(1);
 }
 
 if (process.env.JMP_FAKE_LEGACY_DRIVERS && startsWith("describe", "lease") && has("--drivers")) {
@@ -235,8 +267,20 @@ const responses = [
     },
   ],
 
+  // `--with ports` alone is what the Leases view asks, for the direction of a lease's forwards.
+  [
+    () => startsWith("get", "exporters") && (valueOf("--with") ?? "").split(",").includes("ports"),
+    fixture("exporters-ports.json"),
+  ],
   [() => startsWith("get", "exporters"), exporters],
-  [() => startsWith("get", "leases"), { leases: [lease] }],
+  // JMP_FAKE_MEMBERS adds the leases with members of the real CLI's output to the one lease of one exporter:
+  // the suites that are about that one lease do not have to tell them apart.
+  [
+    () => startsWith("get", "leases"),
+    { leases: [lease, ...(process.env.JMP_FAKE_MEMBERS ? fixture("leases.json").leases : [])] },
+  ],
+  [() => startsWith("get", "lease-templates"), fixture("lease-templates.json")],
+  [() => startsWith("describe", "lease-template"), fixture("lease-template.json")],
   [() => startsWith("driver", "list"), { drivers: [] }],
   [() => startsWith("driver", "schema"), { drivers: [] }],
 
@@ -352,6 +396,22 @@ function respond() {
     );
     process.stdout.write(`${file}\n`);
     return true;
+  }
+
+  // The drivers of the roles of a lease with members are read inside its
+  // session, by a script (`jmp shell --lease L -- python -c ...`): answer
+  // with what that script printed against real driver sessions.
+  if (startsWith("shell") && has("--", "-c") && argv.some((arg) => arg.includes("lease_members_from_env"))) {
+    process.stdout.write(fixtureText("role-drivers.txt"));
+    return true;
+  }
+
+  // The real CLI refuses to describe the drivers of a lease with members.
+  if (startsWith("describe", "lease") && has("--drivers") && /^lease-(9m2qd|degraded|omitted|pending)$/.test(argv[2] ?? "")) {
+    process.stderr.write(
+      `Error: lease ${argv[2]} has members (phone, headunit), not one exporter: request it with a LeaseMembers class, or call env_members() in its shell\n`,
+    );
+    process.exit(1);
   }
 
   // Creating a lease answers with the new lease's name.

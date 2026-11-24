@@ -1,0 +1,137 @@
+{
+    "lease_templates": [
+        {
+            "namespace": "default",
+            "name": "ivi",
+            "description": "AAOS head unit, phone, and body ECU on one CAN bus",
+            "docs": [
+                "https://wiki.example.com/labs/ivi"
+            ],
+            "image": "https://wiki.example.com/labs/ivi.png",
+            "instructions": "Set the head unit to on before you start the phone.\n",
+            "members": [
+                {
+                    "member": {
+                        "name": "headunit",
+                        "selector": "device-type=aaos-headunit",
+                        "exporter_name": null,
+                        "optional": false,
+                        "allow_disabled": false,
+                        "excluded": false
+                    },
+                    "available": 2
+                },
+                {
+                    "member": {
+                        "name": "phone",
+                        "selector": "device-type=phone",
+                        "exporter_name": null,
+                        "optional": true,
+                        "allow_disabled": false,
+                        "excluded": false
+                    },
+                    "available": 0
+                },
+                {
+                    "member": {
+                        "name": "ecu",
+                        "selector": null,
+                        "exporter_name": "ecu-11",
+                        "optional": false,
+                        "allow_disabled": false,
+                        "excluded": false
+                    },
+                    "available": 1
+                }
+            ],
+            "constraints": [
+                {
+                    "member_names": [
+                        "headunit",
+                        "ecu"
+                    ],
+                    "same_label": "bus"
+                }
+            ],
+            "default_duration": 7200.0,
+            "default_shared_with": [
+                "lab-support"
+            ],
+            "generation": 3,
+            "forwards": [
+                {
+                    "name": "bt",
+                    "endpoints": [
+                        {
+                            "member_name": "headunit",
+                            "port_name": "rootcanal"
+                        },
+                        {
+                            "member_name": "phone",
+                            "port_name": "controller"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "namespace": "default",
+            "name": "bench",
+            "description": "AAOS head unit, phone, and body ECU on one CAN bus",
+            "docs": [
+                "https://wiki.example.com/labs/ivi"
+            ],
+            "image": "https://wiki.example.com/labs/ivi.png",
+            "instructions": "Set the head unit to on before you start the phone.\n",
+            "members": [
+                {
+                    "member": {
+                        "name": "headunit",
+                        "selector": "device-type=aaos-headunit",
+                        "exporter_name": null,
+                        "optional": false,
+                        "allow_disabled": false,
+                        "excluded": false
+                    },
+                    "available": 2
+                },
+                {
+                    "member": {
+                        "name": "phone",
+                        "selector": "device-type=phone",
+                        "exporter_name": null,
+                        "optional": true,
+                        "allow_disabled": false,
+                        "excluded": false
+                    },
+                    "available": 0
+                },
+                {
+                    "member": {
+                        "name": "ecu",
+                        "selector": null,
+                        "exporter_name": "ecu-11",
+                        "optional": false,
+                        "allow_disabled": false,
+                        "excluded": false
+                    },
+                    "available": 1
+                }
+            ],
+            "constraints": [
+                {
+                    "member_names": [
+                        "headunit",
+                        "ecu"
+                    ],
+                    "same_label": "bus"
+                }
+            ],
+            "default_duration": 7200.0,
+            "default_shared_with": [
+                "lab-support"
+            ],
+            "generation": 3
+        }
+    ]
+}

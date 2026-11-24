@@ -191,7 +191,31 @@ export function adminLeaseStatus(lease: AdminLease): LeaseStatus {
   if (!isLeaseActive(lease)) {
     return "Ended";
   }
+  // A lease with members has no exporter of its own: it is held once a role
+  // has one, and degraded while a role has lost its.
+  const roles = lease.status?.members ?? [];
+  if (roles.some((role) => role.state === "Lost")) {
+    return "Degraded";
+  }
+  if (roles.some((role) => role.exporterRef?.name)) {
+    return "In-Use";
+  }
   return lease.status?.exporter?.name ? "In-Use" : "Waiting";
+}
+
+/** The roles of a lease with members, each with its exporter and state; empty for a lease of one exporter. */
+export function adminLeaseRoles(lease: AdminLease): { name: string; exporter?: string; state: string }[] {
+  const statuses = new Map((lease.status?.members ?? []).map((role) => [role.name, role]));
+  return (lease.spec?.members ?? [])
+    .filter((member) => typeof member?.name === "string")
+    .map((member) => {
+      const status = statuses.get(member.name);
+      return {
+        name: member.name,
+        exporter: status?.exporterRef?.name,
+        state: status?.state ?? (member.excluded ? "Omitted" : "Pending"),
+      };
+    });
 }
 
 export function leaseRow(lease: AdminLease): RowSpec {
@@ -200,8 +224,12 @@ export function leaseRow(lease: AdminLease): RowSpec {
   const exporter = lease.status?.exporter?.name;
   const selector = describeLabels(lease.spec?.selector?.matchLabels);
   const { icon, color } = leaseStatusIcon(adminLeaseStatus(lease));
+  const roles = adminLeaseRoles(lease);
+  const template = lease.spec?.templateRef?.name;
+  // A lease with members is named by its template, else by its roles.
+  const held = roles.length > 0 ? (template ?? roles.map((role) => role.name).join(", ")) : undefined;
   return {
-    label: exporter ?? selector ?? lease.metadata.name,
+    label: held ?? exporter ?? selector ?? lease.metadata.name,
     description: [client, lease.spec?.duration, active ? undefined : "ended"]
       .filter(Boolean)
       .join(" · "),
@@ -209,7 +237,14 @@ export function leaseRow(lease: AdminLease): RowSpec {
       `**${lease.metadata.name}**`,
       "",
       `Client: \`${client}\``,
-      exporter ? `Exporter: \`${exporter}\`` : "Not bound to an exporter yet.",
+      ...(roles.length > 0
+        ? [
+            template ? `Template: \`${template}\`` : "",
+            ...roles.map(
+              (role) => `Role \`${role.name}\`: ${role.exporter ? `\`${role.exporter}\` ` : ""}${role.state}`,
+            ),
+          ]
+        : [exporter ? `Exporter: \`${exporter}\`` : "Not bound to an exporter yet."]),
       selector ? `Selector: \`${selector}\`` : "",
       lease.spec?.duration ? `Duration: ${lease.spec.duration}` : "",
       lease.status?.beginTime ? `Began: ${lease.status.beginTime}` : "",

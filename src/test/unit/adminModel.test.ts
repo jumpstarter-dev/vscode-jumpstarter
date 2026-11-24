@@ -6,6 +6,7 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import {
+  adminLeaseRoles,
   adminLeaseStatus,
   clientRow,
   describeLabels,
@@ -204,4 +205,49 @@ test("importedClientNames matches cluster clients by the name they were issued a
   assert.ok(names.has("other"));
   assert.ok(!names.has("belt.yaml"));
   assert.equal(importedClientNames(null).size, 0);
+});
+
+test("a lease with members is held by its roles, and named by its template", () => {
+  // What `jmp admin get lease -o json` has for a lease with members: no status.exporter at all.
+  const members: AdminLease = {
+    metadata: { name: "lease-9m2qd", namespace: "lab" },
+    spec: {
+      client: { name: "ci-runner" },
+      duration: "45m",
+      members: [{ name: "phone", optional: true }, { name: "headunit" }],
+      templateRef: { name: "ivi", generation: 3 },
+    },
+    status: {
+      ended: false,
+      beginTime: "2026-01-01T00:00:00Z",
+      members: [
+        { name: "phone", state: "Bound", exporterRef: { name: "rack3-phone-4" } },
+        { name: "headunit", state: "Bound", exporterRef: { name: "rack3-hu-2" } },
+      ],
+    },
+  };
+  assert.equal(adminLeaseStatus(members), "In-Use");
+  assert.deepEqual(adminLeaseRoles(members), [
+    { name: "phone", exporter: "rack3-phone-4", state: "Bound" },
+    { name: "headunit", exporter: "rack3-hu-2", state: "Bound" },
+  ]);
+  const row = leaseRow(members);
+  assert.equal(row.label, "ivi");
+  assert.match(row.tooltipMarkdown, /Template: `ivi`/);
+  assert.match(row.tooltipMarkdown, /Role `phone`: `rack3-phone-4` Bound/);
+  assert.doesNotMatch(row.tooltipMarkdown, /Not bound to an exporter yet|undefined/);
+
+  const lost: AdminLease = {
+    ...members,
+    spec: { ...members.spec, templateRef: null },
+    status: { ...members.status, members: [{ name: "phone", state: "Lost", reason: "Offline" }] },
+  };
+  assert.equal(adminLeaseStatus(lost), "Degraded");
+  assert.equal(leaseRow(lost).label, "phone, headunit");
+  assert.deepEqual(adminLeaseRoles(lost)[1], { name: "headunit", exporter: undefined, state: "Pending" });
+
+  const waiting: AdminLease = { ...members, status: { ended: false } };
+  assert.equal(adminLeaseStatus(waiting), "Waiting");
+  // A lease of one exporter has no roles.
+  assert.deepEqual(adminLeaseRoles({ metadata: { name: "a", namespace: "lab" } }), []);
 });

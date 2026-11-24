@@ -20,6 +20,7 @@ export type {
   RunResult,
   CreateLeaseOptions,
   AdminOptions,
+  LeaseTemplatesResult,
 } from "./jmpService";
 export { ConfigWatcher } from "./configWatcher";
 export { StatusBarManager } from "./statusBar";

@@ -20,6 +20,8 @@ import { spawn } from "child_process";
 import { PythonExtension } from "@vscode/python-extension";
 import * as protocol from "./jmpProtocol";
 import { JmpError, JmpCapabilities, CreateLeaseOptions, AdminOptions } from "./jmpProtocol";
+import * as leaseProtocol from "./leaseProtocol";
+import type { CreateTemplateLeaseOptions, RoleDrivers } from "./leaseProtocol";
 import {
   AdminClient,
   AdminExporter,
@@ -35,10 +37,11 @@ import {
   DriverSchema,
   DriverSchemaResponse,
   Exporter,
+  ExporterPort,
   GetExportersResponse,
-  GetLeasesResponse,
   JmpVersion,
   Lease,
+  LeaseTemplate,
   LeaseWithDrivers,
 } from "../types";
 
@@ -65,6 +68,14 @@ export type JmpAvailability =
   | { kind: "no-jmp-in-env"; python: string }
   | { kind: "error"; error: JmpError };
 
+/**
+ * The lease templates a client can request, or why there are none to ask
+ * for: a `jmp` or a controller from before lease templates is not an error.
+ */
+export type LeaseTemplatesResult =
+  | { kind: "ok"; templates: LeaseTemplate[] }
+  | { kind: "unavailable"; reason: string };
+
 export interface RunResult {
   stdout: string;
   /** Raw stderr text. */
@@ -76,6 +87,8 @@ export interface RunResult {
 const DEFAULT_TIMEOUT_MS = 30_000;
 /** How long the answer to a local read serves the other views of the same refresh. */
 const SHARED_READ_MS = 5_000;
+/** How long the ports the exporters declare are kept: they are part of an exporter's configuration. */
+const PORTS_MS = 60_000;
 
 export class JmpService implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
@@ -94,6 +107,10 @@ export class JmpService implements vscode.Disposable {
 
   private pythonApi: PythonExtension | undefined;
   private availability: JmpAvailability | undefined;
+  /** The ports of a client's exporters, as last read; see getExporterPorts. */
+  private readonly ports = new Map<string, { value: Record<string, ExporterPort[]>; until: number }>();
+  /** Set once this `jmp` refused `--with ports`: it is not asked again until the next probe. */
+  private portsUnsupported = false;
 
   constructor(output?: vscode.OutputChannel) {
     this.output = output ?? vscode.window.createOutputChannel("Jumpstarter");
@@ -181,6 +198,8 @@ export class JmpService implements vscode.Disposable {
   async probe(): Promise<JmpAvailability> {
     // (another interpreter may be another jmp, with other answers)
     this.forgetSharedReads();
+    this.ports.clear();
+    this.portsUnsupported = false;
     // Probes can overlap (activation, a settings change, an interpreter change) and one of a slow CLI can end
     // after one that started later: only the answer of the latest probe says what is available now.
     const mine = ++this.probes;
@@ -415,10 +434,116 @@ export class JmpService implements vscode.Disposable {
 
   /** `jmp get leases -o json --client <client>` (`-a` when includeEnded). */
   async getLeases(client: string, includeEnded = false): Promise<Lease[]> {
-    const res = await this.runJson<GetLeasesResponse>(
-      protocol.buildGetLeasesArgs(client, includeEnded),
+    const res = await this.runJson<unknown>(protocol.buildGetLeasesArgs(client, includeEnded));
+    // Made safe to render whatever the CLI's version: a lease with members
+    // has no exporter, and an older CLI has none of the member fields.
+    return leaseProtocol.parseLeases(res);
+  }
+
+  /**
+   * `jmp get lease-templates -o json --client <client>`: the sets of
+   * exporters a lab administrator published for this client to request.
+   *
+   * A `jmp` that has no such command, and a controller too old for
+   * templates, answer `unavailable` with the reason; only other failures
+   * (the controller cannot be reached, the token expired) are thrown.
+   */
+  async getLeaseTemplates(client: string): Promise<LeaseTemplatesResult> {
+    try {
+      const res = await this.runJson<unknown>(leaseProtocol.buildGetLeaseTemplatesArgs(client));
+      return { kind: "ok", templates: leaseProtocol.parseLeaseTemplates(res) };
+    } catch (err) {
+      const reason = err instanceof JmpError ? leaseProtocol.leaseTemplatesUnavailable(err) : undefined;
+      if (reason === undefined) {
+        throw err;
+      }
+      return { kind: "unavailable", reason };
+    }
+  }
+
+  /**
+   * `jmp create lease -t <template> ... -o name`: one lease that holds an
+   * exporter for each role of the template. Tags always include
+   * created-by=vscode. Resolves to the new lease's name.
+   */
+  async createTemplateLease(client: string, opts: CreateTemplateLeaseOptions): Promise<string> {
+    const { stdout } = await this.run(leaseProtocol.buildCreateTemplateLeaseArgs(client, opts), {
+      timeoutMs: 120_000,
+    });
+    return stdout.trim();
+  }
+
+  /**
+   * The ports each exporter declares, by exporter name
+   * (`jmp get exporters --with ports -o json`): what says which way a
+   * forward of a lease goes. Never throws: without an answer (a `jmp` from
+   * before ports, a controller that cannot be reached) there are no ports,
+   * and a forward is shown without its arrow.
+   */
+  async getExporterPorts(client: string): Promise<Record<string, ExporterPort[]>> {
+    const known = this.ports.get(client);
+    if (known && Date.now() < known.until) {
+      return known.value;
+    }
+    if (this.portsUnsupported) {
+      return {};
+    }
+    try {
+      const res = await this.runJson<unknown>(leaseProtocol.buildGetExporterPortsArgs(client));
+      const value = leaseProtocol.parseExporterPorts(res);
+      this.ports.set(client, { value, until: Date.now() + PORTS_MS });
+      return value;
+    } catch (err) {
+      if (err instanceof JmpError && err.kind === "usage") {
+        this.portsUnsupported = true;
+        this.log("this jmp has no `get exporters --with ports`: forwards are shown without their direction");
+      }
+      return known?.value ?? {};
+    }
+  }
+
+  /**
+   * The driver tree of every bound role of a lease with members, by role.
+   *
+   * `jmp describe lease --drivers` connects to the one exporter of a lease
+   * and refuses a lease with members, so the trees are read inside the
+   * lease's own session (`jmp shell --lease NAME -- python -c ...`), where
+   * each role is served; see ROLE_DRIVERS_SCRIPT. Starting the session can
+   * be slow, hence the longer timeout.
+   */
+  async describeRoleDrivers(client: string, lease: string): Promise<Record<string, RoleDrivers>> {
+    this.requireCapability("describeDrivers", "Driver browsing");
+    const invocation = await this.getInvocation();
+    const command = leaseProtocol.buildRoleDriversCommand(await this.getSessionInterpreter(invocation));
+    const { stdout } = await this.run(protocol.buildShellArgs(client, lease, command), {
+      invocation,
+      timeoutMs: 120_000,
+    });
+    return leaseProtocol.parseRoleDrivers(stdout);
+  }
+
+  /**
+   * The Python a command inside a lease session should run with: the
+   * interpreter `jmp` itself runs from, so that `jumpstarter` and the
+   * project's dependencies import. In `<python> -m jumpstarter_cli` mode
+   * that is the command; beside a `jmp` executable it is the `python` of the
+   * same directory (a virtual environment's `bin`), else the active
+   * interpreter when known, else a bare "python".
+   */
+  async getSessionInterpreter(given?: JmpInvocation): Promise<string> {
+    const invocation = given ?? (await this.getInvocation());
+    if (invocation.prefixArgs.length > 0) {
+      return invocation.command;
+    }
+    const python = await this.pythonPathOrEmpty();
+    if (python) {
+      return python;
+    }
+    const beside = path.join(
+      path.dirname(invocation.command),
+      process.platform === "win32" ? "python.exe" : "python",
     );
-    return res.leases ?? [];
+    return path.isAbsolute(invocation.command) && fsSync.existsSync(beside) ? beside : "python";
   }
 
   /**
@@ -794,14 +919,7 @@ export class JmpService implements vscode.Disposable {
     filePath: string,
   ): Promise<{ command: string; args: string[] }> {
     const invocation = await this.getInvocation();
-    let interpreter: string;
-    if (invocation.prefixArgs.length > 0) {
-      // `<python> -m jumpstarter_cli` mode: the command IS the interpreter.
-      interpreter = invocation.command;
-    } else {
-      const python = await this.pythonPathOrEmpty();
-      interpreter = python || "python";
-    }
+    const interpreter = await this.getSessionInterpreter(invocation);
     return {
       command: invocation.command,
       args: [

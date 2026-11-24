@@ -278,3 +278,31 @@ test("formatRemaining covers all buckets", () => {
   assert.equal(formatRemaining(5 * 60), "5m left");
   assert.equal(formatRemaining(3665), "1h 1m left");
 });
+
+test("a lease with members can be pinned, and is described by its template or its roles", () => {
+  const members = lease({
+    name: "from-template",
+    exporter: "",
+    exporter_name: null,
+    members: [{ name: "phone" }, { name: "headunit" }],
+    template: { template: "ivi" },
+  });
+  const degraded = lease({
+    name: "degraded",
+    status: "Degraded",
+    exporter: "",
+    exporter_name: null,
+    members: [{ name: "phone" }, { name: "headunit" }],
+    template: null,
+  });
+  assert.equal(isLeasePinnable(degraded), true);
+  const entries = buildLeasePickEntries([members, degraded], undefined, new Date("2026-08-29T10:00:00Z"));
+  assert.deepEqual(
+    entries.map((entry) => [entry.leaseName, entry.description]),
+    [
+      ["degraded", "Degraded · phone, headunit · not started"],
+      ["from-template", "In-Use · ivi · not started"],
+    ],
+  );
+  assert.equal(coercePinArgument({ kind: "lease", client: "lab", lease: members }).leaseName, "from-template");
+});

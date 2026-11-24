@@ -6,12 +6,18 @@
  * expand into a driver tree fetched lazily via
  * `jmp describe lease <name> --drivers` and cached per lease; driver fetch
  * failures render as an inline error node (never a modal).
+ *
+ * A lease with members (one exporter for each role) expands into its roles
+ * and forwards instead; each bound role then expands into that role's driver
+ * tree, read once for all the roles of the lease from inside its session.
  */
 
 import * as vscode from "vscode";
-import { Lease, LeaseDriverTree } from "../../types";
+import { ExporterPort, Lease, LeaseDriverTree, isLeaseUsable } from "../../types";
 import { describePending, JmpService, JmpError, PendingLease, PendingLeaseStore } from "../../services";
+import type { RoleDrivers } from "../../services/leaseProtocol";
 import * as model from "./model";
+import * as members from "./members";
 
 export interface MessageNode {
   kind: "message";
@@ -39,6 +45,8 @@ export interface DriverNode {
   kind: "driver";
   client: string;
   leaseName: string;
+  /** The role the driver belongs to, for a lease with members. */
+  role?: string;
   descriptor: model.DriverNodeDescriptor;
 }
 
@@ -46,13 +54,34 @@ export interface CommandNode {
   kind: "command";
   client: string;
   leaseName: string;
+  /** The role the command addresses, for a lease with members. */
+  role?: string;
   descriptor: model.CommandDescriptor;
+}
+
+/** One role of a lease with members. */
+export interface RoleNode {
+  kind: "role";
+  client: string;
+  lease: Lease;
+  leaseName: string;
+  role: members.RoleDescriptor;
+}
+
+/** One forward of a lease with members. */
+export interface ForwardNode {
+  kind: "forward";
+  client: string;
+  lease: Lease;
+  forward: members.ForwardDescriptor;
 }
 
 export type LeaseTreeNode =
   | MessageNode
   | LeaseNode
   | PendingLeaseNode
+  | RoleNode
+  | ForwardNode
   | DriverNode
   | CommandNode;
 
@@ -69,6 +98,13 @@ interface DriverTreeCacheEntry {
   error?: string;
 }
 
+/** The driver trees of the roles of one lease with members: one read serves every role. */
+interface RoleTreesCacheEntry {
+  promise: Promise<Record<string, RoleDrivers>>;
+  roles?: Record<string, RoleDrivers>;
+  error?: string;
+}
+
 export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode> {
   private readonly changeEmitter = new vscode.EventEmitter<LeaseTreeNode | undefined>();
   readonly onDidChangeTreeData: vscode.Event<LeaseTreeNode | undefined> =
@@ -76,6 +112,9 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
 
   private state: RootState = { kind: "loading" };
   private readonly driverTreeCache = new Map<string, DriverTreeCacheEntry>();
+  private readonly roleTreesCache = new Map<string, RoleTreesCacheEntry>();
+  /** The ports each exporter declares, by exporter: what gives a forward its arrow. */
+  private portsByExporter: Readonly<Record<string, readonly ExporterPort[]>> = {};
   /** Whether a driver client class has a view in Jumpstarter Web; see setWebViewLookup. */
   private hasWebView: (driverClass: string, driverPath: readonly string[]) => boolean = () => false;
 
@@ -91,6 +130,24 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
   setWebViewLookup(lookup: (driverClass: string, driverPath: readonly string[]) => boolean): void {
     this.hasWebView = lookup;
     this.changeEmitter.fire(undefined);
+  }
+
+  /**
+   * Tell the tree which ports the exporters declare, so the forwards of a
+   * lease are drawn with their direction. Re-renders.
+   */
+  setExporterPorts(ports: Readonly<Record<string, readonly ExporterPort[]>>): void {
+    this.portsByExporter = ports;
+    this.changeEmitter.fire(undefined);
+  }
+
+  private directionsOf(lease: Lease): members.DirectionLookup {
+    return members.portDirections(lease, this.portsByExporter);
+  }
+
+  private clearDriverCaches(): void {
+    this.driverTreeCache.clear();
+    this.roleTreesCache.clear();
   }
 
   // -- state transitions (called by the feature's poller tick) --------------
@@ -113,15 +170,24 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
     if (this.state.kind !== "data" || this.state.client !== client) {
       // Client switched (or first data): driver sessions belong to the old
       // client, drop them all.
-      this.driverTreeCache.clear();
+      this.clearDriverCaches();
     } else {
-      // Drop cached driver trees for leases that are gone or no longer In-Use.
+      // Drop cached driver trees for leases that are gone or no longer in use.
       const inUse = new Set(
-        leases.filter((l) => l.status === "In-Use").map((l) => l.name),
+        leases.filter((l) => isLeaseUsable(l.status)).map((l) => l.name),
       );
-      for (const name of [...this.driverTreeCache.keys()]) {
-        if (!inUse.has(name)) {
-          this.driverTreeCache.delete(name);
+      for (const cache of [this.driverTreeCache, this.roleTreesCache]) {
+        for (const name of [...cache.keys()]) {
+          if (!inUse.has(name)) {
+            cache.delete(name);
+          }
+        }
+      }
+      // A role that was bound to another exporter since has another driver tree.
+      const before = new Map(this.state.leases.map((l) => [l.name, boundRoles(l)]));
+      for (const lease of leases) {
+        if (this.roleTreesCache.has(lease.name) && before.get(lease.name) !== boundRoles(lease)) {
+          this.roleTreesCache.delete(lease.name);
         }
       }
     }
@@ -130,13 +196,13 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
   }
 
   setNoClient(): void {
-    this.driverTreeCache.clear();
+    this.clearDriverCaches();
     this.state = { kind: "no-client" };
     this.changeEmitter.fire(undefined);
   }
 
   setAuthExpired(client: string): void {
-    this.driverTreeCache.clear();
+    this.clearDriverCaches();
     this.state = { kind: "auth-expired", client };
     this.changeEmitter.fire(undefined);
   }
@@ -165,18 +231,19 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
   /** Drop one driver tree, or all of them after an environment/capability change. */
   refreshDrivers(leaseName?: string): void {
     if (leaseName === undefined) {
-      this.driverTreeCache.clear();
+      this.clearDriverCaches();
     } else {
       this.driverTreeCache.delete(leaseName);
+      this.roleTreesCache.delete(leaseName);
     }
     this.changeEmitter.fire(undefined);
   }
 
-  /** True while any In-Use lease with a begin time is displayed. */
+  /** True while any lease in use with a begin time is displayed. */
   hasTickingLeases(): boolean {
     return (
       this.state.kind === "data" &&
-      this.state.leases.some((l) => l.status === "In-Use" && l.effective_begin_time !== null)
+      this.state.leases.some((l) => isLeaseUsable(l.status) && l.effective_begin_time !== null)
     );
   }
 
@@ -190,6 +257,10 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
         return this.leaseItem(node);
       case "pending":
         return this.pendingItem(node);
+      case "role":
+        return this.memberItem(members.buildRoleRow(node.lease, node.role, members.isWorkable(node.lease)));
+      case "forward":
+        return this.memberItem(members.buildForwardRow(node.lease, node.forward));
       case "driver":
         return this.driverItem(node);
       case "command":
@@ -202,17 +273,110 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
       return this.rootChildren();
     }
     if (node.kind === "lease") {
-      return this.driverChildren(node);
+      return members.isMemberLease(node.lease) ? this.memberChildren(node) : this.driverChildren(node);
+    }
+    if (node.kind === "role") {
+      return this.roleDriverChildren(node);
     }
     if (node.kind === "driver") {
       return node.descriptor.commands.map((descriptor) => ({
         kind: "command",
         client: node.client,
         leaseName: node.leaseName,
+        ...(node.role ? { role: node.role } : {}),
         descriptor,
       }));
     }
     return [];
+  }
+
+  /**
+   * What a lease with members shows under it: a notice when it is degraded,
+   * its roles in the lease's order, then its forwards. Nothing is asked of
+   * the CLI for this: it is all in the lease as it was listed.
+   */
+  private memberChildren(node: LeaseNode): LeaseTreeNode[] {
+    const { lease, client } = node;
+    const children: LeaseTreeNode[] = [];
+    if (members.isDegraded(lease)) {
+      children.push({
+        kind: "message",
+        text: members.describeDegraded(lease),
+        icon: "warning",
+        iconColor: "list.warningForeground",
+        tooltip: "A role of this lease lost its exporter. The other roles stay usable.",
+      });
+    }
+    for (const role of members.leaseRoles(lease)) {
+      children.push({ kind: "role", client, lease, leaseName: lease.name, role });
+    }
+    for (const forward of members.leaseForwards(lease, this.directionsOf(lease))) {
+      children.push({ kind: "forward", client, lease, forward });
+    }
+    return children;
+  }
+
+  /** The drivers of one bound role: the role's own driver tree, with commands that name the role. */
+  private roleDriverChildren(node: RoleNode): Promise<LeaseTreeNode[]> {
+    if (!members.isWorkable(node.lease) || !node.role.bound) {
+      return Promise.resolve([]);
+    }
+    if (!this.jmp.hasCapability("describeDrivers")) {
+      return Promise.resolve([
+        {
+          kind: "message",
+          text: "Driver browsing requires the integration-branch CLI and jumpstarter.experimentalCliFeatures.",
+          icon: "info",
+        },
+      ]);
+    }
+    const name = node.leaseName;
+    let entry = this.roleTreesCache.get(name);
+    if (!entry) {
+      const created: RoleTreesCacheEntry = {
+        promise: this.jmp.describeRoleDrivers(node.client, name).then(
+          (roles) => {
+            created.roles = roles;
+            return roles;
+          },
+          (err: unknown) => {
+            created.error = err instanceof JmpError ? err.message : String(err);
+            throw err;
+          },
+        ),
+      };
+      // (a failure is shown by every role that waits for it; nothing is left unhandled)
+      created.promise.catch(() => undefined);
+      entry = created;
+      this.roleTreesCache.set(name, entry);
+    }
+    const render = (roles: Record<string, RoleDrivers>): LeaseTreeNode[] => {
+      const found = roles[node.role.name];
+      if (!found) {
+        return this.driverErrorNodes(name, `The session of the lease does not serve the role ${node.role.name}`);
+      }
+      if ("error" in found) {
+        return this.driverErrorNodes(name, found.error);
+      }
+      const drivers = model.buildDriverNodes(found.driver_tree, node.role.name);
+      if (drivers.length === 0) {
+        return [{ kind: "message", text: "No drivers reported", icon: "info" }];
+      }
+      return drivers.map((descriptor) => ({
+        kind: "driver",
+        client: node.client,
+        leaseName: name,
+        role: node.role.name,
+        descriptor,
+      }));
+    };
+    if (entry.roles) {
+      return Promise.resolve(render(entry.roles));
+    }
+    const pending = entry;
+    return pending.promise.then(render, () =>
+      this.driverErrorNodes(name, pending.error ?? "Failed to load drivers"),
+    );
   }
 
   private rootChildren(): LeaseTreeNode[] {
@@ -280,7 +444,7 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
   }
 
   private driverChildren(node: LeaseNode): Promise<LeaseTreeNode[]> {
-    if (node.lease.status !== "In-Use") {
+    if (!isLeaseUsable(node.lease.status)) {
       return Promise.resolve([]);
     }
     if (!this.jmp.hasCapability("describeDrivers")) {
@@ -368,12 +532,28 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
   }
 
   private leaseItem(node: LeaseNode): vscode.TreeItem {
-    const row = model.buildLeaseRow(node.lease);
+    const row = model.buildLeaseRow(node.lease, new Date(), this.directionsOf(node.lease));
     const item = new vscode.TreeItem(
       row.label,
       row.expandable
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None,
+    );
+    item.id = row.id;
+    item.description = row.description;
+    item.tooltip = row.tooltip;
+    item.contextValue = row.contextValue;
+    item.iconPath = row.iconColor
+      ? new vscode.ThemeIcon(row.icon, new vscode.ThemeColor(row.iconColor))
+      : new vscode.ThemeIcon(row.icon);
+    return item;
+  }
+
+  /** A role or a forward of a lease with members. */
+  private memberItem(row: members.MemberRowDescriptor): vscode.TreeItem {
+    const item = new vscode.TreeItem(
+      row.label,
+      row.expandable ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
     );
     item.id = row.id;
     item.description = row.description;
@@ -412,7 +592,7 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None,
     );
-    item.id = `jumpstarter.driver/${node.leaseName}/${d.id}`;
+    item.id = `jumpstarter.driver/${node.leaseName}/${node.role ? `${node.role}/` : ""}${d.id}`;
     item.description = d.description;
     item.tooltip = d.tooltip;
     item.contextValue = this.hasWebView(d.driverClass, d.driverPath) ? "jumpstarterDriver-web" : "jumpstarterDriver";
@@ -423,7 +603,7 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
   private commandItem(node: CommandNode): vscode.TreeItem {
     const d = node.descriptor;
     const item = new vscode.TreeItem(d.label, vscode.TreeItemCollapsibleState.None);
-    item.id = `jumpstarter.command/${node.leaseName}/${d.cliPath.join("/")}`;
+    item.id = `jumpstarter.command/${node.leaseName}/${[...(node.role ? [node.role] : []), ...d.cliPath].join("/")}`;
     item.tooltip = d.tooltip;
     item.contextValue = "jumpstarterDeviceCommand";
     item.iconPath = new vscode.ThemeIcon("play");
@@ -443,4 +623,12 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
   dispose(): void {
     this.changeEmitter.dispose();
   }
+}
+
+/** Which exporter each role of a lease is bound to, as one comparable text. */
+function boundRoles(lease: Lease): string {
+  return members
+    .leaseRoles(lease)
+    .map((role) => `${role.name}=${role.bound ? role.exporter : ""}`)
+    .join(",");
 }

@@ -9,6 +9,10 @@
  *   copy JMP_LEASE export line.
  * - In-Use leases expand into a cached driver tree (drivers + runnable `j`
  *   commands); command leaves run inside the lease session in a terminal.
+ * - A lease with members (from a lease template) expands into its roles and
+ *   forwards; a bound role expands into its own drivers, whose commands run
+ *   as `j ROLE DRIVER ...` in the one session of the lease. Shell, extend and
+ *   end act on the lease as a whole.
  */
 
 import * as vscode from "vscode";
@@ -50,7 +54,8 @@ export function registerLeases(
   context.subscriptions.push(
     treeView.onDidChangeSelection((e) => {
       const selected = e.selection[0] as { kind?: string; lease?: Lease } | undefined;
-      if (selected?.kind === "lease" && selected.lease) {
+      // (a role or a forward is part of its lease: the lease is what the pane describes)
+      if (selected?.lease && ["lease", "role", "forward"].includes(selected.kind ?? "")) {
         showDetails({ kind: "lease", lease: selected.lease });
       }
     }),
@@ -80,6 +85,11 @@ export function registerLeases(
       provider.setLeases(current, leases);
       treeView.description = model.viewDescription(current, includeEnded);
       treeView.message = undefined;
+      // The direction of a forward is its ports', which the exporters declare:
+      // asked only when a lease has forwards, and never a reason to fail.
+      if (leases.some((lease) => (lease.forwards ?? []).length > 0)) {
+        provider.setExporterPorts(await jmp.getExporterPorts(current));
+      }
     },
   });
   context.subscriptions.push(poller);
@@ -467,7 +477,8 @@ export function registerLeases(
         return;
       }
       const lease = leaseNode.lease;
-      const target = lease.exporter_name ? ` on exporter '${lease.exporter_name}'` : "";
+      // (a lease with members is ended as one: every role goes back)
+      const target = model.describeLeaseHolding(lease);
       const confirmed = await vscode.window.showWarningMessage(
         `End lease '${lease.name}'${target}?`,
         { modal: true },
@@ -500,12 +511,13 @@ export function registerLeases(
     vscode.commands.registerCommand(
       "jumpstarter.leases.refreshDevices",
       (node: unknown) => {
-        // Invoked from the lease context menu (LeaseNode) or from the inline
-        // driver-error node's retry action ({ leaseName }).
+        // Invoked from the lease context menu (LeaseNode), from a role of a
+        // lease with members (RoleNode) or from the inline driver-error
+        // node's retry action ({ leaseName }).
         let leaseName: string | undefined;
         if (node && typeof node === "object") {
           const n = node as { kind?: string; lease?: { name?: string }; leaseName?: string };
-          leaseName = n.kind === "lease" ? n.lease?.name : n.leaseName;
+          leaseName = n.kind === "lease" ? n.lease?.name : (n.leaseName ?? n.lease?.name);
         }
         if (leaseName) {
           provider.refreshDrivers(leaseName);
@@ -524,6 +536,7 @@ export function registerLeases(
         if (!values) {
           return; // cancelled
         }
+        // (for a role of a lease with members the arguments start with the role: `j ROLE DRIVER ...`)
         const args = model.buildCommandArgs(n.descriptor, values);
         await runInLeaseTerminal(`j ${args.join(" ")}`, () =>
           jmp.getShellCommand(n.client, n.leaseName, ["j", ...args]),

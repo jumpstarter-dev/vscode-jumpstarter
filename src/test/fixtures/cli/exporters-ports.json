@@ -1,0 +1,43 @@
+{
+    "exporters": [
+        {
+            "namespace": "default",
+            "name": "rack3-hu-2",
+            "labels": {},
+            "deprecated_labels": {},
+            "ports": [
+                {
+                    "name": "rootcanal",
+                    "direction": "provides",
+                    "protocol": "rootcanal-hci"
+                }
+            ]
+        },
+        {
+            "namespace": "default",
+            "name": "rack3-phone-4",
+            "labels": {},
+            "deprecated_labels": {},
+            "ports": [
+                {
+                    "name": "controller",
+                    "direction": "requires",
+                    "protocol": "rootcanal-hci"
+                },
+                {
+                    "name": "can0",
+                    "direction": "connects",
+                    "attachment": "wired",
+                    "transport": "frame"
+                }
+            ]
+        },
+        {
+            "namespace": "default",
+            "name": "bench-1",
+            "labels": {},
+            "deprecated_labels": {},
+            "ports": []
+        }
+    ]
+}

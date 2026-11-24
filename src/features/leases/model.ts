@@ -12,8 +12,16 @@ import {
   Lease,
   LeaseDriverTree,
   LeaseStatus,
+  isLeaseUsable,
   leaseRemainingSeconds,
 } from "../../types";
+import {
+  DirectionLookup,
+  isDegraded,
+  isMemberLease,
+  leaseTarget,
+  memberTooltipLines,
+} from "./members";
 import {
   CREATED_BY_TAG_KEY,
   CREATED_BY_TAG_VALUE,
@@ -39,7 +47,10 @@ export interface LeaseRowDescriptor {
   icon: string;
   /** Theme color id for the icon, if any. */
   iconColor: string | undefined;
-  /** Only In-Use leases expand into a driver tree. */
+  /**
+   * A lease in use expands into its driver tree; a lease with members expands
+   * into its roles and forwards in any state (a role that is waiting says so).
+   */
   expandable: boolean;
   createdByVscode: boolean;
 }
@@ -47,8 +58,10 @@ export interface LeaseRowDescriptor {
 export interface CommandDescriptor {
   /** CLI path relative to `j`, e.g. ["power", "on"]. */
   cliPath: string[];
-  /** "j power on" */
+  /** "j power on"; "j phone power on" for a role of a lease with members. */
   label: string;
+  /** The role the command addresses, for a lease with members (`j ROLE ...`). */
+  role?: string;
   tooltip: string;
   /** Parameters the command accepts, in Click's declaration order. */
   params: CliParam[];
@@ -67,6 +80,8 @@ export interface DriverNodeDescriptor {
   driverPath: string[];
   /** The full name of the driver's client class. */
   driverClass: string;
+  /** The role the driver belongs to, for a lease with members. */
+  role?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,12 +138,15 @@ export function isVscodeCreated(lease: Lease): boolean {
 
 /** Whether the lease is still active (shellable / extendable / releasable). */
 export function isActiveStatus(status: LeaseStatus): boolean {
-  return status === "In-Use" || status === "Waiting";
+  return isLeaseUsable(status) || status === "Waiting";
 }
 
 function statusFlag(status: LeaseStatus): string {
   switch (status) {
     case "In-Use":
+    // A degraded lease is still held and its bound roles still work: every
+    // action of a lease in use applies to it.
+    case "Degraded":
       return "inUse";
     case "Waiting":
       return "waiting";
@@ -149,6 +167,9 @@ export function leaseStatusIcon(status: LeaseStatus): { icon: string; color: str
   switch (status) {
     case "In-Use":
       return { icon: "lock", color: "charts.green" };
+    case "Degraded":
+      // Held, with a role that lost its exporter: the lock, in the warning colour.
+      return { icon: "lock", color: "list.warningForeground" };
     case "Waiting":
       // Requested, not yet granted: the lock is not closed yet. Blue is the
       // pending colour throughout, matching a lease still being acquired.
@@ -164,24 +185,35 @@ export function leaseStatusIcon(status: LeaseStatus): { icon: string; color: str
   }
 }
 
-export function buildLeaseRow(lease: Lease, now: Date = new Date()): LeaseRowDescriptor {
+export function buildLeaseRow(
+  lease: Lease,
+  now: Date = new Date(),
+  direction?: DirectionLookup,
+): LeaseRowDescriptor {
   const vscodeCreated = isVscodeCreated(lease);
+  const members = isMemberLease(lease);
+  // A lease whose role lost its exporter is Degraded, whatever word the CLI has for it.
+  const degraded = isDegraded(lease);
+  const status: LeaseStatus = degraded ? "Degraded" : lease.status;
   const parts: string[] = [];
-  if (lease.exporter_name) {
-    parts.push(lease.exporter_name);
+  // The exporter of a lease of one; the template (else the roles) of a lease with members.
+  const target = leaseTarget(lease);
+  if (target) {
+    parts.push(target);
   }
-  parts.push(lease.status);
-  const remaining =
-    lease.status === "In-Use" ? formatRemaining(leaseRemainingSeconds(lease, now)) : "";
+  parts.push(status);
+  const remaining = isLeaseUsable(status) ? formatRemaining(leaseRemainingSeconds(lease, now)) : "";
   if (remaining) {
     parts.push(remaining);
   }
 
-  const { icon, color } = leaseStatusIcon(lease.status);
+  const { icon, color } = leaseStatusIcon(status);
   const tooltipLines = [
     lease.name,
-    `Exporter: ${lease.exporter_name || lease.selector || "(selector)"}`,
-    `Status: ${lease.status}`,
+    ...(members
+      ? memberTooltipLines(lease, direction)
+      : [`Exporter: ${target || lease.selector || "(selector)"}`]),
+    `Status: ${status}`,
     `Duration: ${formatSpan(lease.duration)}`,
   ];
   if (lease.effective_begin_time) {
@@ -195,9 +227,13 @@ export function buildLeaseRow(lease: Lease, now: Date = new Date()): LeaseRowDes
     tooltipLines.push("Created by the VS Code extension");
   }
 
-  let contextValue = `jumpstarterLease-${statusFlag(lease.status)}`;
+  let contextValue = `jumpstarterLease-${statusFlag(status)}`;
   if (vscodeCreated) {
     contextValue += "-vscode";
+  }
+  if (members) {
+    // (last, so that the menus that match a lease by the start of this value take both kinds)
+    contextValue += "-members";
   }
 
   return {
@@ -209,13 +245,14 @@ export function buildLeaseRow(lease: Lease, now: Date = new Date()): LeaseRowDes
     // The zap icon doubles as the "created by this extension" badge.
     icon: vscodeCreated ? "zap" : icon,
     iconColor: color,
-    expandable: lease.status === "In-Use",
+    expandable: isLeaseUsable(status) || members,
     createdByVscode: vscodeCreated,
   };
 }
 
 const STATUS_RANK: Record<LeaseStatus, number> = {
   "In-Use": 0,
+  Degraded: 0,
   Waiting: 1,
   Expired: 2,
   Ended: 3,
@@ -253,7 +290,8 @@ export function findCliNode(root: CliTreeNode, path: readonly string[]): CliTree
   return node;
 }
 
-function makeCommand(node: CliTreeNode, cliPath: string[]): CommandDescriptor {
+function makeCommand(node: CliTreeNode, cliPath: string[], role?: string): CommandDescriptor {
+  const line = `j ${[...(role ? [role] : []), ...cliPath].join(" ")}`;
   const lines: string[] = [];
   if (node.help) {
     lines.push(node.help.trim());
@@ -269,8 +307,9 @@ function makeCommand(node: CliTreeNode, cliPath: string[]): CommandDescriptor {
   return {
     cliPath,
     params,
-    label: `j ${cliPath.join(" ")}`,
-    tooltip: lines.join("\n") || `j ${cliPath.join(" ")}`,
+    label: line,
+    tooltip: lines.join("\n") || line,
+    ...(role ? { role } : {}),
   };
 }
 
@@ -279,15 +318,19 @@ function makeCommand(node: CliTreeNode, cliPath: string[]): CommandDescriptor {
  * of `node` relative to `j`. A driver whose node is itself a leaf yields a
  * single command.
  */
-export function collectCommands(node: CliTreeNode, basePath: string[]): CommandDescriptor[] {
+export function collectCommands(
+  node: CliTreeNode,
+  basePath: string[],
+  role?: string,
+): CommandDescriptor[] {
   const subs = node.subcommands ?? {};
   const keys = Object.keys(subs).sort();
   if (keys.length === 0) {
-    return basePath.length > 0 ? [makeCommand(node, basePath)] : [];
+    return basePath.length > 0 ? [makeCommand(node, basePath, role)] : [];
   }
   const out: CommandDescriptor[] = [];
   for (const key of keys) {
-    out.push(...collectCommands(subs[key], [...basePath, key]));
+    out.push(...collectCommands(subs[key], [...basePath, key], role));
   }
   return out;
 }
@@ -296,8 +339,11 @@ export function collectCommands(node: CliTreeNode, basePath: string[]): CommandD
  * Build driver nodes with their runnable commands. Each driver is matched to
  * its cli_tree subtree via driver_path, falling back to the dotted `path`
  * split into segments; drivers with no matching CLI subtree get no commands.
+ *
+ * `role` is the role the tree is of, for a lease with members: the drivers
+ * and commands are then that role's, and a command runs as `j ROLE ...`.
  */
-export function buildDriverNodes(driverTree: LeaseDriverTree): DriverNodeDescriptor[] {
+export function buildDriverNodes(driverTree: LeaseDriverTree, role?: string): DriverNodeDescriptor[] {
   const root = driverTree.cli_tree;
   // The root composite is the session handle itself, not a device: it carries
   // an empty driver_path and no commands of its own, so its children are shown
@@ -316,8 +362,9 @@ export function buildDriverNodes(driverTree: LeaseDriverTree): DriverNodeDescrip
         cliNode = fallbackNode;
       }
     }
-    const commands = cliNode && cliPath.length > 0 ? collectCommands(cliNode, cliPath) : [];
-    const tooltipLines = [driver.class];
+    const commands = cliNode && cliPath.length > 0 ? collectCommands(cliNode, cliPath, role) : [];
+    const driverClass = driver.class ?? "";
+    const tooltipLines = [driverClass];
     if (driver.description) {
       tooltipLines.push(driver.description.trim());
     }
@@ -325,13 +372,14 @@ export function buildDriverNodes(driverTree: LeaseDriverTree): DriverNodeDescrip
       tooltipLines.push(`Methods: ${driver.methods.join(", ")}`);
     }
     return {
-      id: driver.path || driver.driver_path.join("/"),
-      label: tailOfPath(driver.path || driver.class),
-      description: tailOfPath(driver.class),
+      id: driver.path || (driver.driver_path ?? []).join("/"),
+      label: tailOfPath(driver.path || driverClass),
+      description: tailOfPath(driverClass),
       tooltip: tooltipLines.join("\n"),
       commands,
       driverPath: [...(driver.driver_path ?? [])],
-      driverClass: driver.class,
+      driverClass,
+      ...(role ? { role } : {}),
     };
   });
 }
@@ -350,6 +398,16 @@ export const EXTEND_DURATION_CHOICES = ["30m", "1h", "2h", "4h", "8h"] as const;
 export function isValidDuration(input: string): boolean {
   const s = input.trim();
   return /^(\d+d)?(\d+h)?(\d+m)?(\d+s)?$/.test(s) && /\d/.test(s);
+}
+
+/** "on exporter 'x'", "with roles a, b": what ending a lease gives back, for the confirmation. */
+export function describeLeaseHolding(lease: Lease): string {
+  if (isMemberLease(lease)) {
+    const roles = (lease.members ?? []).map((member) => member.name).join(", ");
+    const template = lease.template?.template;
+    return template ? ` from template '${template}' (roles ${roles})` : ` with roles ${roles}`;
+  }
+  return lease.exporter_name ? ` on exporter '${lease.exporter_name}'` : "";
 }
 
 /** Shell line for the clipboard action. */
@@ -406,6 +464,10 @@ export function describeParam(param: CliParam): string {
 /**
  * Build the `j` argv for a command from collected parameter values.
  *
+ * A command of a role of a lease with members starts with the role
+ * (`j ROLE DRIVER ...`): in such a lease's shell that is what names the
+ * exporter.
+ *
  * Options are spelled by their flag and come first, so a positional value
  * that looks like a flag is still read as the argument it is. Arguments keep
  * Click's declaration order. A boolean flag contributes the flag alone when
@@ -441,5 +503,5 @@ export function buildCommandArgs(
     }
   }
 
-  return [...command.cliPath, ...options, ...positional];
+  return [...(command.role ? [command.role] : []), ...command.cliPath, ...options, ...positional];
 }

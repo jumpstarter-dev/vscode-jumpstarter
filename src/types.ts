@@ -16,17 +16,81 @@ export type ExporterStatus =
   | "AFTER_LEASE_HOOK_FAILED"
   | "UNSPECIFIED";
 
-/** Lease status as reported by `jmp get leases`. */
-export type LeaseStatus = "In-Use" | "Waiting" | "Expired" | "Ended" | "Unknown";
+/**
+ * Lease status as reported by `jmp get leases`. `Degraded` is a lease with
+ * members of which one lost its exporter: the other roles stay usable.
+ */
+export type LeaseStatus = "In-Use" | "Degraded" | "Waiting" | "Expired" | "Ended" | "Unknown";
+
+/** Whether a lease holds exporters a session can be opened on (a degraded lease still serves its bound roles). */
+export function isLeaseUsable(status: LeaseStatus): boolean {
+  return status === "In-Use" || status === "Degraded";
+}
+
+/** One role of a lease with members, or of a lease template. */
+export interface LeaseMember {
+  name: string;
+  selector?: string | null;
+  exporter_name?: string | null;
+  optional?: boolean;
+  allow_disabled?: boolean;
+  excluded?: boolean;
+}
+
+/** What the controller says of one role: `Pending`, `Bound`, `Omitted` or `Lost`. */
+export interface LeaseMemberStatus {
+  name: string;
+  state: string;
+  exporter?: string | null;
+  reason?: string | null;
+  message?: string | null;
+}
+
+export interface ForwardEndpoint {
+  member_name: string;
+  port_name: string;
+}
+
+/** A forward: it connects ports on different roles of a lease. */
+export interface LeaseForward {
+  name: string;
+  endpoints: ForwardEndpoint[];
+}
+
+/** The state of one end of a forward: `Pending`, `Ready`, `Connected` or `Failed`. */
+export interface LeaseForwardEndStatus {
+  member_name: string;
+  state: string;
+  message?: string | null;
+}
+
+/** The state of a forward: `Pending`, `Disabled`, `Listening`, `Connected` or `Failed`. */
+export interface LeaseForwardStatus {
+  name: string;
+  state: string;
+  message?: string | null;
+  ends?: LeaseForwardEndStatus[];
+}
+
+export interface LeaseConstraint {
+  member_names: string[];
+  same_label?: string | null;
+}
+
+/** The lease template a lease was made from. */
+export interface LeaseTemplateUse {
+  template: string;
+  generation?: number;
+}
 
 export interface Lease {
   name: string;
   namespace: string;
   selector: string;
-  /** Full exporter resource reference (may be a path-ish identifier). */
+  /** Full exporter resource reference (may be a path-ish identifier). Empty for a lease with members. */
   exporter: string;
-  /** Plain exporter name. */
-  exporter_name: string;
+  /** Plain exporter name. Null for a lease with members: each role has its own (member_statuses). */
+  exporter_name: string | null;
   client: string;
   /** Lease duration in seconds (float). */
   duration: number;
@@ -38,6 +102,50 @@ export interface Lease {
   context: Record<string, string>;
   conditions: unknown[];
   status: LeaseStatus;
+  /**
+   * Set for a lease with members only (`jmp create lease -t` / `--member`);
+   * a lease of one exporter has none of these fields.
+   */
+  members?: LeaseMember[];
+  constraints?: LeaseConstraint[];
+  template?: LeaseTemplateUse | null;
+  member_statuses?: LeaseMemberStatus[];
+  /** Set for a lease with forwards only. */
+  forwards?: LeaseForward[];
+  forward_statuses?: LeaseForwardStatus[];
+}
+
+/** A port a driver of an exporter declares (`jmp get exporters --with ports`). */
+export interface ExporterPort {
+  name: string;
+  /** `provides`, `requires` or `connects`. */
+  direction: string;
+  protocol?: string | null;
+  attachment?: string;
+  transport?: string;
+}
+
+/** One role of a lease template, with how many exporters the client could lease for it now. */
+export interface LeaseTemplateMember {
+  member: LeaseMember;
+  available: number;
+}
+
+/** A lease template, as `jmp get lease-templates -o json` lists it. */
+export interface LeaseTemplate {
+  namespace: string;
+  name: string;
+  description: string;
+  docs: string[];
+  image?: string | null;
+  instructions?: string | null;
+  members: LeaseTemplateMember[];
+  constraints: LeaseConstraint[];
+  /** Seconds (float), or null when a request must name a duration. */
+  default_duration: number | null;
+  default_shared_with: string[];
+  generation?: number;
+  forwards: LeaseForward[];
 }
 
 export interface Exporter {
@@ -55,14 +163,12 @@ export interface Exporter {
   enabled?: boolean;
   /** The active lease on this exporter, or null when unleased. */
   lease: Lease | null;
+  /** Only with `--with ports`, and only for an exporter that declares ports. */
+  ports?: ExporterPort[];
 }
 
 export interface GetExportersResponse {
   exporters: Exporter[];
-}
-
-export interface GetLeasesResponse {
-  leases: Lease[];
 }
 
 export interface ClientConfigMetadata {
@@ -179,12 +285,17 @@ export interface AdminLease {
     duration?: string;
     release?: boolean;
     selector?: { matchLabels?: Record<string, string> | null } | null;
+    /** A lease with members: its roles, and the template it was made from. */
+    members?: { name: string; optional?: boolean | null; excluded?: boolean | null }[] | null;
+    templateRef?: { name: string; generation?: number } | null;
   } | null;
   status?: {
     beginTime?: string | null;
     endTime?: string | null;
     ended?: boolean;
     exporter?: AdminNameRef | null;
+    /** A lease with members: the state and the exporter of each role. */
+    members?: { name: string; state?: string; reason?: string | null; exporterRef?: AdminNameRef | null }[] | null;
   } | null;
 }
 

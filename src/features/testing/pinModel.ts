@@ -14,7 +14,8 @@
  * fresh lease per run.
  */
 
-import { AuthStatusValue, Lease, leaseRemainingSeconds } from "../../types";
+import { AuthStatusValue, Lease, isLeaseUsable, leaseRemainingSeconds } from "../../types";
+import { leaseTarget } from "../leases/members";
 
 /** workspaceState key holding the serialized TestPin. */
 export const PIN_STATE_KEY = "jumpstarter.testing.pin";
@@ -111,7 +112,7 @@ export function pinStatusBarTooltip(pin: TestPin): string {
 
 /** Whether a lease is worth offering in the pin picker / keeping pinned. */
 export function isLeasePinnable(lease: Lease): boolean {
-  return lease.status === "In-Use" || lease.status === "Waiting";
+  return isLeaseUsable(lease.status) || lease.status === "Waiting";
 }
 
 // ---------------------------------------------------------------------------
@@ -287,8 +288,9 @@ export function buildLeasePickEntries(
       return a.name.localeCompare(b.name);
     })
     .map((lease) => {
-      const parts = [lease.status, lease.exporter_name || lease.selector || "(no exporter)"];
-      if (lease.status === "In-Use") {
+      // (a lease with members is named by its template, or its roles)
+      const parts = [lease.status, leaseTarget(lease) || lease.selector || "(no exporter)"];
+      if (isLeaseUsable(lease.status)) {
         parts.push(formatRemaining(leaseRemainingSeconds(lease, now)));
       }
       return {
