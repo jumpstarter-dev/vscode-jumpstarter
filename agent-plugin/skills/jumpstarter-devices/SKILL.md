@@ -28,6 +28,27 @@ the `jmp` CLI. In VS Code the Jumpstarter extension registers it (setting `jumps
 6. **Finish.** `jmp_disconnect`. Call `jmp_delete_lease` only for a lease you created in this task, never for one
    the user already had.
 
+## Leases with members (several devices in one lease)
+
+A lab administrator can publish **lease templates**: sets of devices that belong together (a head unit, its phone
+and its ECU), each a **role**. One lease from a template holds an exporter for every role, and has no single
+exporter of its own.
+
+The `jmp_*` connection tools work on a lease of one exporter. For a lease with members use the CLI in a terminal:
+
+* `jmp get lease-templates` lists the templates (a `*` marks an optional role) and
+  `jmp describe lease-template NAME` shows one with its instructions.
+* `jmp create lease -t NAME --duration 1h -o name` requests it; `--without ROLE` leaves an optional role out.
+  Ask first, as for any lease.
+* `jmp shell --lease LEASE -- j ROLE DRIVER ...` runs a driver command on one role (`j headunit power on`);
+  `jmp shell --lease LEASE -- j --help` lists the roles and `jmp shell --lease LEASE -- j-forward status` the
+  forwards between them.
+* In Python, inside `jmp shell --lease LEASE`: `from jumpstarter.utils.env import env_members`, then
+  `with env_members() as members: members.by_role["phone"]...`. `env()` is for a lease of one exporter.
+
+A lease whose status is `Degraded` lost the exporter of one role; the other roles still work. In VS Code the
+user sees the roles and forwards under the lease in the Jumpstarter view, and lease templates in their own view.
+
 ## Raw commands
 
 `jmp_run` runs a `j` command line on the connection, as a list of arguments; `jmp_explore` lists what there is.

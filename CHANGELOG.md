@@ -8,6 +8,18 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Added
 
+- Leases with members (JEP-0015) and port forwards (JEP-0016): a lease made
+  from a lease template shows its template, its roles (exporter, state, the
+  reason of a role that was left out or lost), a Degraded notice and its
+  forwards (endpoints with their direction, state, message; each end in the
+  tooltip). A bound role expands into its own drivers, whose commands run as
+  `j ROLE DRIVER ...`. Shell, extend, end, pin and the Jumpstarter Web views
+  work on such a lease: one shell and one view for the lease, views per role.
+- **Lease Templates** view (`jmp get lease-templates`) with **Lease This
+  Template...** (`jmp create lease -t NAME [--without ROLE] [--duration D]`).
+  Hidden, with a logged reason, when the CLI or the controller has no lease
+  templates.
+
 - Jumpstarter Web: open a driver's own view (screen, Appium Inspector,
   console) in a panel beside the editor from its row in the Leases view, a
   lease's screen and tools together, or the full web UI in the browser. One

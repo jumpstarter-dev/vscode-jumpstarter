@@ -177,6 +177,81 @@ icon.
   no controller in that path, so it is a session rather than a lease and does
   not appear in this list.
 
+#### Leases with members: roles and forwards
+
+A lease made from a **lease template** (or with `jmp create lease --member`)
+holds several exporters at once, one for each **role**: a head unit, its phone
+and its ECU in one lease. It has no exporter of its own, so its row names the
+template it was made from (else its roles), and it expands into what it holds:
+
+```
+⚡ ivi-4fj2k   ivi · Degraded · 1h 48m left
+   ⚠ Degraded: ecu (Offline) lost its exporter
+   headunit    rack3-hu-2 · Bound
+      power    PowerClient
+         ▶ j headunit power on
+   phone       rack3-phone-4 · Bound · optional
+   ecu         Lost: Offline · was ecu-9
+   bt          headunit.rootcanal → phone.controller · Connected
+```
+
+- **Roles**, in the lease's order, each with its exporter and its state:
+  `Bound`, `Pending`, `Omitted` (an optional role that was left out) or
+  `Lost`, with the reason for the last two.
+- A **Degraded** notice when a role lost its exporter. The other roles stay
+  usable, and the lease keeps every action of a lease in use.
+- **Forwards**, which connect a port on one role to a port on another
+  (`jmp create lease --forward`, or the template's): what each connects, with
+  an arrow from the port that provides to the ports that require (`↔` between
+  the two ends of a path), its state (`Pending`, `Listening`, `Connected`,
+  `Disabled`, `Failed`) and what the controller said of a forward that does not
+  operate. The state of each end is in the tooltip. The direction comes from
+  the ports the exporters declare (`jmp get exporters --with ports`); with a
+  CLI that has none, the endpoints are listed without an arrow.
+- A bound role expands into **its own drivers and commands**, as a lease of
+  one exporter does. A command runs as `j ROLE DRIVER …` (`j headunit power
+  on`), which is how the lease's shell names an exporter. The drivers of all
+  the roles are read once, inside the lease's session (same requirement as
+  driver browsing above).
+- **Open Shell in Lease**, **Run Current File**, **Extend Lease…**, **End
+  Lease** and **Copy JMP_LEASE Export Line** act on the lease as one: one
+  shell with every role (`j ROLE …`, `j-forward status`), and extending or
+  ending it applies to every role. It can be pinned for test runs like any
+  lease (the pin exports its name in `JMP_LEASE`); whether a test framework
+  can drive a lease with members is the framework's to say.
+
+Leases of one exporter are shown as before. The fields are read as the CLI
+prints them (`members`, `member_statuses`, `template`, `forwards`,
+`forward_statuses` of `jmp get leases -o json`); a CLI from before leases with
+members prints none of them, and a field or state a later one adds is shown
+as it is named.
+
+### Lease Templates view
+
+Lists the **lease templates** the current client can request
+(`jmp get lease-templates`): sets of exporters that belong together, which a
+lab administrator published.
+
+- Each template shows its roles (a `*` marks an optional one), how many of
+  them have an exporter you can lease now (`2/3 available`, a guide only) and
+  its description. It expands into the roles (how each finds its exporter, and
+  how many there are to lease), the forwards a lease from it will have, and its
+  documentation links, which open in the browser.
+- Selecting a template shows its details in the **Details** pane: roles,
+  constraints, forwards, links, and the administrator's instructions as plain
+  text.
+- **Lease This Template…** on a template (or **Jumpstarter: Lease from
+  Template…** from the palette, the Leases view and the Exporters view) asks
+  which optional roles to leave out and for how long (the template's default
+  duration when it has one), then requests it:
+  `jmp create lease -t NAME [--without ROLE]… [--duration D]`. The request
+  shows in the Leases view while the roles are being bound, and the lease
+  appears there with its roles.
+
+The view is hidden when the `jmp` in use has no `lease-templates` command, or
+its controller is too old for templates; that is logged to the Jumpstarter
+output channel, **Lease from Template…** says why, and nothing else changes.
+
 ### Screens and tools from Jumpstarter Web
 
 With [Jumpstarter Web](https://github.com/jumpstarter-dev/jumpstarter-web)
@@ -193,6 +268,14 @@ parts of a lease VS Code has no view for open beside the editor:
   Inspector, open from their drivers: an Inspector starts a session on the
   device, so it opens when it is asked for.
 - **Open Full Web UI in Browser** opens the whole workbench.
+- A **lease with members** opens as **one view with all its roles**: **Open
+  Screen** on the lease shows Jumpstarter Web's view of the lease, one role in
+  front and the others beside it (its Companions window), with the lease's
+  roles and forwards. **Open Screen** on a bound role, and **Open View** on a
+  driver of a role, show that role alone. Jumpstarter Web's links cannot name
+  a role of a lease, so a role's views are served by a server of that role:
+  the lease's session starts `jumpstarter-web serve` with the role's exporter
+  as its device (one more server for each role whose views are open).
 
 One `jumpstarter-web serve` is started per lease, inside the lease session
 (`jmp shell --lease L -- jumpstarter-web serve`), the first time a view is
@@ -226,6 +309,10 @@ An agent in the editor's chat can work with devices as you do, with nothing to c
   `jmp` the views use (the selected interpreter's, `jumpstarter.jmpPath`, or the one on `PATH`), so an agent sees your
   clients, exporters and leases. It is offered when that `jmp` has the `mcp` command (the `jumpstarter-mcp` package);
   `jumpstarter.mcp.enabled` turns it off. It appears under "MCP: List Servers" as **Jumpstarter**. 
+* **Leases with members.** An agent lists lease templates and requests one with the CLI
+  (`jmp get lease-templates`, `jmp create lease -t NAME`), and uses a role's drivers with
+  `jmp shell --lease NAME -- j ROLE DRIVER …`; the `jumpstarter-devices` skill says so. The MCP tools
+  themselves connect to a lease of one exporter (`jmp_connect` has no role yet).
 * **Skills.** Two [agent skills](https://code.visualstudio.com/docs/agent-customization/agent-skills) come with the
   extension: `jumpstarter-devices` (leasing a device and using its drivers through the MCP tools) and
   `jumpstarter-robot-tests` (Robot Framework suites against leased devices).
