@@ -6,6 +6,8 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import {
   buildDriverViewLink,
+  buildMemberLeaseLink,
+  buildRoleCommand,
   buildServeArgs,
   buildWebUiLink,
   DEFAULT_TOOLS,
@@ -22,6 +24,8 @@ import {
   parsePluginViews,
   parseReadyUrl,
   resolveWebCommand,
+  ROLE_SESSION_SCRIPT,
+  serverKey,
   tail,
   viewsForDriver,
 } from "../../features/webUi/model";
@@ -279,4 +283,66 @@ test("a server that could not have its port says so in a way that is recognized"
   assert.ok(portTaken("Jumpstarter Web exited (1) before it listened.\nOSError: [Errno 98] Address already in use"));
   assert.ok(portTaken("error while attempting to bind on address ('0.0.0.0', 7071): address already in use"));
   assert.ok(!portTaken("Jumpstarter Web is not installed in this environment."));
+});
+
+// ---------------------------------------------------------------------------
+// A lease with members: one view with all its roles, and a role's own views
+// ---------------------------------------------------------------------------
+
+test("a lease with members opens as one view, with the window that shows its other roles", () => {
+  const server = "http://127.0.0.1:7071/";
+  // What the link names to show also names the roles beside the first: without it the page shows one role.
+  assert.equal(
+    buildMemberLeaseLink(server, { tools: ["hmi", "appium-inspector"], chrome: "none" }),
+    "http://127.0.0.1:7071/#/d/?only=hmi,appium-inspector,shell%2Fcompanions&chrome=none",
+  );
+  assert.equal(
+    buildMemberLeaseLink(server, { tools: ["hmi", "shell/companions"], chrome: "minimal" }),
+    "http://127.0.0.1:7071/#/d/?only=hmi,shell%2Fcompanions&chrome=minimal",
+  );
+  // The whole workbench has every window already.
+  assert.equal(buildMemberLeaseLink(server), "http://127.0.0.1:7071/#/d/");
+  assert.equal(buildMemberLeaseLink(server, { tools: [], chrome: "none" }), "http://127.0.0.1:7071/#/d/?chrome=none");
+  // (the token of a server that has one stays in the query, never in the route)
+  assert.equal(
+    buildMemberLeaseLink("https://ws.example/?token=t", { tools: ["hmi"], chrome: "none" }),
+    "https://ws.example/?token=t#/d/?only=hmi,shell%2Fcompanions&chrome=none",
+  );
+});
+
+test("a role's view is served by a server started as that role, inside the lease's shell", () => {
+  const serve = ["/venv/bin/jumpstarter-web", "serve", "--host", "127.0.0.1", "--port", "7071"];
+  assert.deepEqual(buildRoleCommand("/venv/bin/python", "phone", serve), [
+    "/venv/bin/python", "-c", ROLE_SESSION_SCRIPT, "phone", ...serve,
+  ]);
+  // It gives the command the role's exporter the way `jmp shell` gives a lease of one exporter its own.
+  assert.match(ROLE_SESSION_SCRIPT, /JMP_LEASE_MEMBERS/);
+  assert.match(ROLE_SESSION_SCRIPT, /os\.environ\['JUMPSTARTER_HOST'\] = entry\['socket'\]/);
+  assert.match(ROLE_SESSION_SCRIPT, /os\.execvp\(sys\.argv\[2\], sys\.argv\[2:\]\)/);
+});
+
+test("a lease and each of its roles have a server of their own", () => {
+  assert.equal(serverKey("lease-1"), "lease-1");
+  assert.notEqual(serverKey("lease-1", "phone"), serverKey("lease-1"));
+  assert.notEqual(serverKey("lease-1", "phone"), serverKey("lease-1", "headunit"));
+  // (a lease's name cannot contain what separates it from the role)
+  assert.notEqual(serverKey("a", "b-c"), serverKey("a-b", "c"));
+});
+
+test("a panel of a role's view keeps the role, and is made again on that role's server", () => {
+  const link = "http://127.0.0.1:7071/#/d/hmi?view=hmi%2Fscreen%23hmi&only=hmi&chrome=none";
+  const state = panelState("lab", "lease-9m2qd", link, "Screen: phone hmi", "display", "phone");
+  assert.deepEqual(state, {
+    client: "lab",
+    lease: "lease-9m2qd",
+    role: "phone",
+    route: "#/d/hmi?view=hmi%2Fscreen%23hmi&only=hmi&chrome=none",
+    title: "Screen: phone hmi",
+    icon: "display",
+  });
+  assert.deepEqual(parsePanelState(JSON.parse(JSON.stringify(state))), state);
+  // A lease's own panel has no role; one that is not a role's name is not taken for one.
+  assert.equal("role" in panelState("lab", "lease-1", link, "Screen"), false);
+  assert.equal(parsePanelState({ ...state, role: "../etc" })?.role, undefined);
+  assert.equal(parsePanelState({ ...state, role: 7 })?.role, undefined);
 });

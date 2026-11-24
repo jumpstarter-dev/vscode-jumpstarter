@@ -212,6 +212,58 @@ export function buildWebUiLink(serverUrl: string, options: WebUiLinkOptions = {}
   return url.toString();
 }
 
+/** The window of Jumpstarter Web that shows the other roles of a lease with members beside the first. */
+export const COMPANIONS_WINDOW = "shell/companions";
+
+/**
+ * The link to a lease with members: ONE view for the lease, with all its
+ * roles. Jumpstarter Web shows such a lease as one device (the primary role,
+ * which the page chooses) with the other roles beside it, in its Companions
+ * window, together with what the lease says of its roles and forwards. A
+ * link that names what to show (`only=`) therefore names that window too, or
+ * the page would show the primary role and nothing of the others.
+ */
+export function buildMemberLeaseLink(serverUrl: string, options: WebUiLinkOptions = {}): string {
+  const tools = options.tools ?? [];
+  return buildWebUiLink(serverUrl, {
+    ...options,
+    tools: tools.length > 0 && !tools.includes(COMPANIONS_WINDOW) ? [...tools, COMPANIONS_WINDOW] : tools,
+  });
+}
+
+/**
+ * Runs a command as one role of a lease with members, inside the lease's
+ * shell: the command then sees that role's exporter as a `jmp shell` on a
+ * lease of one exporter would give it (`JUMPSTARTER_HOST` is the role's
+ * socket), which is how `jumpstarter-web serve` shows one role alone.
+ *
+ * Jumpstarter Web's own links have no way to name a role of a lease (its
+ * lease view picks the role it shows first), so a view of one role's driver
+ * is served by a server of that role. `JMP_LEASE_MEMBERS` is the shell's:
+ * each role's `socket`, `exporter` and `labels`.
+ */
+export const ROLE_SESSION_SCRIPT = [
+  "import json, os, sys",
+  "role = sys.argv[1]",
+  "entry = json.loads(os.environ.get('JMP_LEASE_MEMBERS') or '{}').get(role)",
+  "if not isinstance(entry, dict) or not entry.get('socket'):",
+  "    sys.exit(f\"jumpstarter: the role '{role}' has no exporter in this lease\")",
+  "os.environ['JUMPSTARTER_HOST'] = entry['socket']",
+  "os.environ['JMP_EXPORTER'] = entry.get('exporter') or ''",
+  "os.environ['JMP_EXPORTER_LABELS'] = ','.join(f'{k}={v}' for k, v in (entry.get('labels') or {}).items())",
+  "os.execvp(sys.argv[2], sys.argv[2:])",
+].join("\n");
+
+/** The command, for inside the lease's shell, that runs `command` as the role. */
+export function buildRoleCommand(python: string, role: string, command: readonly string[]): string[] {
+  return [python, "-c", ROLE_SESSION_SCRIPT, role, ...command];
+}
+
+/** What a server is the server of: a lease, or one role of a lease with members. */
+export function serverKey(lease: string, role?: string): string {
+  return role ? `${lease}\u0000${role}` : lease;
+}
+
 /**
  * The link to one driver's view, alone: the driver's page, that view in
  * front, and only what its plugin has for it around it (the Appium
@@ -385,6 +437,8 @@ export function tail(output: string, lines = 8): string {
 export interface PanelState {
   client: string;
   lease: string;
+  /** The role whose server the view is of, for a view of one role of a lease with members. */
+  role?: string;
   /** The page's route, the part of the link after `#`: nothing of it is secret. */
   route: string;
   title: string;
@@ -392,8 +446,15 @@ export interface PanelState {
 }
 
 /** The state of a panel for a link (the link's own address and token are not kept: they are the server's). */
-export function panelState(client: string, lease: string, link: string, title: string, icon?: string): PanelState {
-  return { client, lease, route: new URL(link).hash, title, ...(icon ? { icon } : {}) };
+export function panelState(
+  client: string,
+  lease: string,
+  link: string,
+  title: string,
+  icon?: string,
+  role?: string,
+): PanelState {
+  return { client, lease, ...(role ? { role } : {}), route: new URL(link).hash, title, ...(icon ? { icon } : {}) };
 }
 
 /** A kept state, if it is one: every field of the right kind, and a route that is a device link. */
@@ -401,14 +462,22 @@ export function parsePanelState(value: unknown): PanelState | undefined {
   if (value === null || typeof value !== "object") {
     return undefined;
   }
-  const { client, lease, route, title, icon } = value as Record<string, unknown>;
+  const { client, lease, role, route, title, icon } = value as Record<string, unknown>;
   if (typeof client !== "string" || typeof lease !== "string" || typeof title !== "string") {
     return undefined;
   }
   if (typeof route !== "string" || !route.startsWith("#/d/") || route.length > 2000) {
     return undefined;
   }
-  return { client, lease, route, title, ...(typeof icon === "string" ? { icon } : {}) };
+  return {
+    client,
+    lease,
+    // (a role is a DNS label; anything else was not written by this extension)
+    ...(typeof role === "string" && /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/.test(role) ? { role } : {}),
+    route,
+    title,
+    ...(typeof icon === "string" ? { icon } : {}),
+  };
 }
 
 /** A server's address with a kept route. */

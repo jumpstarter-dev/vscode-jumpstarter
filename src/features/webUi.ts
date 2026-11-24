@@ -15,6 +15,11 @@
  * the system browser instead.
  * - `jumpstarter.webUi.stop` stops the servers this window started.
  *
+ * A lease with members (one exporter for each role) opens as ONE view with all
+ * its roles: Jumpstarter Web's lease view shows the roles together. A view of
+ * one role's driver is served by a server of that role alone, in the same
+ * lease session (./webUi/model.ts, ROLE_SESSION_SCRIPT).
+ *
  * One `jumpstarter-web serve` runs per lease, inside that lease's session
  * (`jmp shell --lease L -- jumpstarter-web serve`), started the first time it
  * is asked for and reused after. It listens on loopback only. In a remote
@@ -30,9 +35,10 @@ import { createServer } from "net";
 import { Services } from "../services";
 import { buildShellArgs, shellQuote } from "../services/jmpProtocol";
 import { Lease } from "../types";
-import { buildDriverNodes } from "./leases/model";
+import { buildDriverNodes, shortLeaseName } from "./leases/model";
 import type { DriverNodeDescriptor } from "./leases/model";
-import type { DriverNode, LeasesTreeProvider } from "./leases/provider";
+import { isMemberLease, leaseTarget } from "./leases/members";
+import type { DriverNode, LeasesTreeProvider, RoleNode } from "./leases/provider";
 import * as model from "./webUi/model";
 import { buildMessageHtml, buildPanelHtml } from "./webUi/panel";
 import { randomBytes } from "crypto";
@@ -44,6 +50,8 @@ const PANEL_TYPE = "jumpstarter.webView";
 interface LeaseOwner {
   client: string;
   lease: string;
+  /** One role of a lease with members, when the view is that role's alone. */
+  role?: string;
 }
 
 interface LeaseRef {
@@ -61,8 +69,8 @@ interface RunningServer {
 
 /** What the extension exposes of this feature (to the integration tests). */
 export interface WebUiApi {
-  /** The address of the lease's running server, if this window started one. */
-  serverUrl(leaseName: string): string | undefined;
+  /** The address of the lease's running server (or of one of its roles'), if this window started one. */
+  serverUrl(leaseName: string, role?: string): string | undefined;
   stopAll(): void;
   /** The links shown in panels of this window, oldest first. */
   panelLinks(): string[];
@@ -139,9 +147,9 @@ export function registerWebUi(
   /** The ports of the servers that are starting, by lease: taken, though not in `servers` yet. */
   const startingPorts = new Map<string, number>();
 
-  const stop = (leaseName: string): void => {
-    const server = servers.get(leaseName);
-    servers.delete(leaseName);
+  const stop = (key: string): void => {
+    const server = servers.get(key);
+    servers.delete(key);
     if (server) {
       closePanelsOf(server.url);
     }
@@ -167,7 +175,8 @@ export function registerWebUi(
   };
   context.subscriptions.push({ dispose: stopAll });
 
-  const start = async (client: string, leaseName: string): Promise<RunningServer> => {
+  const start = async (client: string, leaseName: string, role?: string): Promise<RunningServer> => {
+    const key = model.serverKey(leaseName, role);
     const invocation = await jmp.getInvocation();
     const web = await webCommand();
 
@@ -195,13 +204,15 @@ export function registerWebUi(
       const external = (await vscode.env.asExternalUri(vscode.Uri.parse(local))).toString();
       publicUrl = model.originOf(external) === local ? undefined : model.originOf(external);
     }
-    startingPorts.set(leaseName, port);
+    startingPorts.set(key, port);
 
     const frameOrigins = model.normalizeFrameOrigins(
       config.get("webUi.frameOrigins"),
       process.env.JUMPSTARTER_WEB_FRAME_ORIGINS,
     );
-    const serve = [...web, ...model.buildServeArgs({ port, host, publicUrl, frameOrigins })];
+    const served = [...web, ...model.buildServeArgs({ port, host, publicUrl, frameOrigins })];
+    // One role of a lease with members: the server is started as that role, so it shows that role's device alone.
+    const serve = role ? model.buildRoleCommand(await jmp.getSessionInterpreter(), role, served) : served;
     const args = [...invocation.prefixArgs, ...buildShellArgs(client, leaseName, serve)];
     jmp.log(`web UI: ${shellQuote([invocation.command, ...args])}`);
 
@@ -254,13 +265,13 @@ export function registerWebUi(
         fail(`Could not run jmp: ${err.message}`);
       });
       child.on("close", (code) => {
-        if (servers.get(leaseName)?.process === child) {
-          const gone = servers.get(leaseName);
-          servers.delete(leaseName);
+        if (servers.get(key)?.process === child) {
+          const gone = servers.get(key);
+          servers.delete(key);
           if (gone) {
             closePanelsOf(gone.url);
           }
-          jmp.log(`web UI of ${leaseName} exited (${code})`);
+          jmp.log(`web UI of ${leaseName}${role ? ` (role ${role})` : ""} exited (${code})`);
         }
         const missing = /No module named jumpstarter_web|jumpstarter-web.*(not found|No such file)/i.test(output);
         fail(
@@ -276,12 +287,12 @@ export function registerWebUi(
    * Start the lease's server; where its port turns out to be taken (another window of the same workspace has a
    * server of its own on that endpoint), on the next endpoint, for as many as there are.
    */
-  const startOnFreePort = async (client: string, leaseName: string): Promise<RunningServer> => {
+  const startOnFreePort = async (client: string, leaseName: string, role?: string): Promise<RunningServer> => {
     for (;;) {
       try {
-        return await start(client, leaseName);
+        return await start(client, leaseName, role);
       } catch (err) {
-        const port = startingPorts.get(leaseName);
+        const port = startingPorts.get(model.serverKey(leaseName, role));
         if (port === undefined || busyPorts.has(port) || !model.portTaken(err instanceof Error ? err.message : "")) {
           throw err;
         }
@@ -291,24 +302,28 @@ export function registerWebUi(
     }
   };
 
-  /** The lease's server, started if this window has none. Concurrent requests share one start. */
-  const ensure = (client: string, leaseName: string): Promise<RunningServer> => {
-    const running = servers.get(leaseName);
+  /**
+   * The lease's server (or the server of one of its roles), started if this window has none. Concurrent
+   * requests share one start.
+   */
+  const ensure = (client: string, leaseName: string, role?: string): Promise<RunningServer> => {
+    const key = model.serverKey(leaseName, role);
+    const running = servers.get(key);
     if (running && running.process.exitCode === null) {
       return Promise.resolve(running);
     }
-    let pending = starting.get(leaseName);
+    let pending = starting.get(key);
     if (!pending) {
-      pending = startOnFreePort(client, leaseName)
+      pending = startOnFreePort(client, leaseName, role)
         .then((server) => {
-          servers.set(leaseName, server);
+          servers.set(key, server);
           return server;
         })
         .finally(() => {
-          starting.delete(leaseName);
-          startingPorts.delete(leaseName);
+          starting.delete(key);
+          startingPorts.delete(key);
         });
-      starting.set(leaseName, pending);
+      starting.set(key, pending);
     }
     return pending;
   };
@@ -369,7 +384,7 @@ export function registerWebUi(
       // Kept when hidden: the view holds a live stream and a session, and a reload would drop both.
       { enableScripts: true, retainContextWhenHidden: true },
     );
-    fill(panel, link, model.panelState(owner.client, owner.lease, link, title, icon));
+    fill(panel, link, model.panelState(owner.client, owner.lease, link, title, icon, owner.role));
     return panel;
   };
 
@@ -388,7 +403,7 @@ export function registerWebUi(
         }
         panel.webview.html = buildMessageHtml(nonce, `Opening ${state.title} again…`);
         try {
-          const server = await ensure(state.client, state.lease);
+          const server = await ensure(state.client, state.lease, state.role);
           fill(panel, model.linkFor(server.url, state.route), state);
         } catch (err) {
           const why = err instanceof Error ? err.message : String(err);
@@ -425,10 +440,10 @@ export function registerWebUi(
       ? "browser"
       : "panel";
 
-  const serverFor = (client: string, leaseName: string): Thenable<RunningServer> =>
+  const serverFor = (client: string, leaseName: string, role?: string): Thenable<RunningServer> =>
     vscode.window.withProgress(
       { location: { viewId: "jumpstarter.leases" }, title: "Starting Jumpstarter Web…" },
-      () => ensure(client, leaseName),
+      () => ensure(client, leaseName, role),
     );
 
   const report = (err: unknown): void => {
@@ -467,7 +482,51 @@ export function registerWebUi(
     return true;
   };
 
+  /**
+   * What is shown of a lease (or of one role) when nothing narrower is asked for: the views the setting names,
+   * together in one tab. For a lease with members that is the one view of the lease, with all its roles.
+   */
+  const openTogether = async (
+    server: RunningServer,
+    owner: LeaseOwner,
+    title: string,
+    members: boolean,
+  ): Promise<void> => {
+    const tools = model.normalizeTools(vscode.workspace.getConfiguration("jumpstarter").get("webUi.tools"), views);
+    const link = members ? model.buildMemberLeaseLink : model.buildWebUiLink;
+    if (preferred() === "browser") {
+      await showInBrowser(link(server.url, tools.length > 0 ? { tools, chrome: "minimal" } : {}));
+      return;
+    }
+    showPanel(link(server.url, { tools, chrome: "none" }), owner, title, "display");
+  };
+
+  /** One bound role of a lease with members: its screen and tools, served as that role alone. */
+  const openRole = async (node: RoleNode): Promise<void> => {
+    if (!node.role.bound) {
+      void vscode.window.showInformationMessage(
+        `Jumpstarter: the role ${node.role.name} has no exporter in this lease (${node.role.state}).`,
+      );
+      return;
+    }
+    try {
+      const server = await serverFor(node.client, node.leaseName, node.role.name);
+      await openTogether(
+        server,
+        { client: node.client, lease: node.leaseName, role: node.role.name },
+        `${node.role.name}: ${node.role.exporter ?? shortLeaseName(node.leaseName)}`,
+        false,
+      );
+    } catch (err) {
+      report(err);
+    }
+  };
+
   const open = async (node: unknown, focused: boolean): Promise<void> => {
+    if (focused && (node as RoleNode | undefined)?.kind === "role" && (node as RoleNode).role) {
+      await openRole(node as RoleNode);
+      return;
+    }
     const ref = leaseOf(node);
     if (!ref) {
       return;
@@ -477,6 +536,17 @@ export function registerWebUi(
       if (!focused) {
         // The whole workbench wants a window of its own.
         await showInBrowser(model.buildWebUiLink(server.url));
+        return;
+      }
+      if (isMemberLease(ref.lease)) {
+        // One view for the lease, with every role: the page shows the roles together. (A role has no driver
+        // tree of the lease's to find a primary view in; its own views open from the role and its drivers.)
+        await openTogether(
+          server,
+          { client: ref.client, lease: ref.lease.name },
+          leaseTarget(ref.lease) || shortLeaseName(ref.lease.name),
+          true,
+        );
         return;
       }
       const setting = vscode.workspace.getConfiguration("jumpstarter").get("webUi.tools");
@@ -493,7 +563,7 @@ export function registerWebUi(
       showPanel(
         model.buildWebUiLink(server.url, { tools, chrome: "none" }),
         { client: ref.client, lease: ref.lease.name },
-        ref.lease.exporter_name || ref.lease.name.slice(0, 8),
+        leaseTarget(ref.lease) || shortLeaseName(ref.lease.name),
         "display",
       );
     } catch (err) {
@@ -526,15 +596,16 @@ export function registerWebUi(
       view = picked.view;
     }
     try {
-      const server = await serverFor(n.client, n.leaseName);
+      // (a driver of a role of a lease with members: the server of that role, where the driver's path is its own)
+      const server = await serverFor(n.client, n.leaseName, n.role);
       if (preferred() === "browser") {
         await showInBrowser(model.buildDriverViewLink(server.url, n.descriptor.driverPath, view, "minimal"));
         return;
       }
       showPanel(
         model.buildDriverViewLink(server.url, n.descriptor.driverPath, view, "none"),
-        { client: n.client, lease: n.leaseName },
-        `${view.title}: ${n.descriptor.label}`,
+        { client: n.client, lease: n.leaseName, ...(n.role ? { role: n.role } : {}) },
+        `${view.title}: ${n.role ? `${n.role} ` : ""}${n.descriptor.label}`,
         view.icon,
       );
     } catch (err) {
@@ -556,7 +627,7 @@ export function registerWebUi(
   );
 
   return {
-    serverUrl: (leaseName) => servers.get(leaseName)?.url,
+    serverUrl: (leaseName, role) => servers.get(model.serverKey(leaseName, role))?.url,
     stopAll,
     panelLinks: () => [...panels.keys()],
     panelHtml: (link) => panels.get(link)?.webview.html,
