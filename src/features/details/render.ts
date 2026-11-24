@@ -6,13 +6,23 @@
  * views already fetched, so opening the pane costs no extra CLI calls.
  */
 
-import { Exporter, Lease } from "../../types";
+import { Exporter, Lease, LeaseTemplate } from "../../types";
 import { ClientRow } from "../clients/logic";
+import {
+  describeForward,
+  describeRoleState,
+  isMemberLease,
+  leaseForwards,
+  leaseRoles,
+  templateName,
+} from "../leases/members";
+import * as templates from "../leaseTemplates/model";
 
 export type DetailsSelection =
   | { kind: "client"; client: ClientRow }
   | { kind: "exporter"; exporter: Exporter }
-  | { kind: "lease"; lease: Lease };
+  | { kind: "lease"; lease: Lease }
+  | { kind: "leaseTemplate"; template: LeaseTemplate };
 
 export interface DetailRow {
   label: string;
@@ -24,6 +34,11 @@ export interface DetailRow {
 export interface DetailSection {
   title: string;
   rows: DetailRow[];
+  /**
+   * Text shown as it was written, line breaks and all (a template's
+   * instructions). Always escaped: it is plain text, never markup.
+   */
+  text?: string;
 }
 
 const EMPTY = "—";
@@ -157,6 +172,8 @@ export function buildExporterSections(exporter: Exporter): DetailSection[] {
 }
 
 export function buildLeaseSections(lease: Lease): DetailSection[] {
+  const members = isMemberLease(lease);
+  const forwards = leaseForwards(lease);
   return [
     {
       title: "Lease",
@@ -165,10 +182,41 @@ export function buildLeaseSections(lease: Lease): DetailSection[] {
         { label: "Namespace", value: text(lease.namespace) },
         { label: "Status", value: text(lease.status) },
         { label: "Client", value: text(lease.client) },
-        { label: "Exporter", value: text(lease.exporter_name ?? lease.exporter), mono: true },
-        { label: "Selector", value: text(lease.selector), mono: true },
+        // A lease with members has no exporter of its own: each role has one (below).
+        ...(members
+          ? [{ label: "Template", value: text(templateName(lease)), mono: true }]
+          : [
+              { label: "Exporter", value: text(lease.exporter_name ?? lease.exporter), mono: true },
+              { label: "Selector", value: text(lease.selector), mono: true },
+            ]),
       ],
     },
+    ...(members
+      ? [
+          {
+            title: "Roles",
+            rows: leaseRoles(lease).map((role) => ({
+              label: role.optional ? `${role.name}*` : role.name,
+              value: [role.exporter, describeRoleState(role), role.message].filter(Boolean).join(" · "),
+              mono: true,
+            })),
+          },
+        ]
+      : []),
+    ...(forwards.length > 0
+      ? [
+          {
+            title: "Forwards",
+            rows: forwards.map((forward) => ({
+              label: forward.name,
+              value: [forward.endpoints, forward.state, forward.message, ...forward.ends]
+                .filter(Boolean)
+                .join(" · "),
+              mono: true,
+            })),
+          },
+        ]
+      : []),
     {
       title: "Timing",
       rows: [
@@ -187,6 +235,60 @@ export function buildLeaseSections(lease: Lease): DetailSection[] {
   ];
 }
 
+export function buildLeaseTemplateSections(template: LeaseTemplate): DetailSection[] {
+  const sections: DetailSection[] = [
+    {
+      title: "Lease template",
+      rows: [
+        { label: "Name", value: template.name, mono: true },
+        { label: "Namespace", value: text(template.namespace) },
+        { label: "Description", value: text(template.description) },
+        { label: "Available", value: `${templates.availableSummary(template)} roles` },
+        { label: "Default duration", value: text(templates.formatDuration(template.default_duration)) },
+        { label: "Shared with", value: text(template.default_shared_with.join(", ")) },
+      ],
+    },
+    {
+      title: "Roles",
+      rows: template.members.map((entry) => ({
+        label: templates.memberLabel(entry),
+        value: [templates.memberSelection(entry), `${entry.available} available`].filter(Boolean).join(" · "),
+        mono: true,
+      })),
+    },
+  ];
+  if (template.constraints.length > 0) {
+    sections.push({
+      title: "Constraints",
+      rows: template.constraints.map((constraint) => ({
+        label: constraint.member_names.join(", "),
+        value: constraint.same_label ? `same ${constraint.same_label}` : EMPTY,
+        mono: true,
+      })),
+    });
+  }
+  if (template.forwards.length > 0) {
+    sections.push({
+      title: "Forwards",
+      rows: template.forwards.map((forward) => ({
+        label: forward.name,
+        value: describeForward(forward),
+        mono: true,
+      })),
+    });
+  }
+  if (template.docs.length > 0) {
+    sections.push({
+      title: "Docs",
+      rows: template.docs.map((doc) => ({ label: "Link", value: doc, mono: true })),
+    });
+  }
+  if (template.instructions) {
+    sections.push({ title: "Instructions", rows: [], text: template.instructions.trim() });
+  }
+  return sections;
+}
+
 export function buildSections(selection: DetailsSelection): DetailSection[] {
   switch (selection.kind) {
     case "client":
@@ -195,6 +297,8 @@ export function buildSections(selection: DetailsSelection): DetailSection[] {
       return buildExporterSections(selection.exporter);
     case "lease":
       return buildLeaseSections(selection.lease);
+    case "leaseTemplate":
+      return buildLeaseTemplateSections(selection.template);
   }
 }
 
@@ -206,6 +310,8 @@ export function selectionTitle(selection: DetailsSelection): string {
       return selection.exporter.name;
     case "lease":
       return selection.lease.name;
+    case "leaseTemplate":
+      return selection.template.name;
   }
 }
 
@@ -217,7 +323,8 @@ function renderSection(section: DetailSection): string {
         `<span class="value${row.mono ? " mono" : ""}">${escapeHtml(row.value)}</span></div>`,
     )
     .join("");
-  return `<section><h2>${escapeHtml(section.title)}</h2>${rows}</section>`;
+  const plain = section.text ? `<pre class="text">${escapeHtml(section.text)}</pre>` : "";
+  return `<section><h2>${escapeHtml(section.title)}</h2>${rows}${plain}</section>`;
 }
 
 const STYLE = `
@@ -256,6 +363,13 @@ const STYLE = `
     font-family: var(--vscode-editor-font-family);
     font-size: 0.95em;
   }
+  .text {
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 2px 0;
+  }
   .empty {
     color: var(--vscode-descriptionForeground);
     padding: 10px 0;
@@ -276,7 +390,7 @@ function document(body: string): string {
 export function renderDetailsHtml(selection: DetailsSelection | null): string {
   if (!selection) {
     return document(
-      '<p class="empty">Select a client, exporter or lease to see its details.</p>',
+      '<p class="empty">Select a client, exporter, lease or lease template to see its details.</p>',
     );
   }
   const heading = `<h1>${escapeHtml(selectionTitle(selection))}</h1>`;

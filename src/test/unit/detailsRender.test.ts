@@ -80,7 +80,7 @@ test("escapeHtml: neutralizes markup", () => {
 
 test("renderDetailsHtml: placeholder when nothing is selected", () => {
   const html = renderDetailsHtml(null);
-  assert.match(html, /Select a client, exporter or lease/);
+  assert.match(html, /Select a client, exporter, lease or lease template/);
   assert.match(html, /Content-Security-Policy/);
 });
 
@@ -127,4 +127,49 @@ test("selectionTitle: names the selected resource", () => {
   assert.equal(selectionTitle({ kind: "exporter", exporter: makeExporter() }), "rpi4-01");
   assert.equal(selectionTitle({ kind: "lease", lease: makeLease() }), "lease-abc");
   assert.equal(selectionTitle({ kind: "client", client: makeClient() }), "belt");
+});
+
+test("lease sections: a lease with members has its template, roles and forwards, and no exporter row", () => {
+  const sections = buildLeaseSections({
+    name: "lease-9m2qd",
+    namespace: "default",
+    selector: "",
+    exporter: "",
+    exporter_name: null,
+    client: "ci-runner",
+    duration: 2700,
+    effective_begin_time: null,
+    effective_end_time: null,
+    begin_time: null,
+    tags: {},
+    context: {},
+    conditions: [],
+    status: "Degraded",
+    members: [{ name: "phone", optional: true }, { name: "headunit" }],
+    member_statuses: [
+      { name: "phone", state: "Lost", exporter: "rack3-phone-4", reason: "ExporterOffline", message: "went offline" },
+      { name: "headunit", state: "Bound", exporter: "rack3-hu-2" },
+    ],
+    template: { template: "ivi" },
+    forwards: [
+      {
+        name: "bt",
+        endpoints: [
+          { member_name: "headunit", port_name: "rootcanal" },
+          { member_name: "phone", port_name: "controller" },
+        ],
+      },
+    ],
+    forward_statuses: [{ name: "bt", state: "Failed", message: "member phone is lost" }],
+  });
+  assert.deepEqual(sections.map((section) => section.title), ["Lease", "Roles", "Forwards", "Timing", "Metadata"]);
+  assert.deepEqual(sections[0].rows.map((row) => row.label), ["Name", "Namespace", "Status", "Client", "Template"]);
+  assert.equal(sections[0].rows[4].value, "ivi");
+  assert.deepEqual(sections[1].rows.map((row) => `${row.label}: ${row.value}`), [
+    "phone*: rack3-phone-4 · Lost: ExporterOffline · went offline",
+    "headunit: rack3-hu-2 · Bound",
+  ]);
+  assert.deepEqual(sections[2].rows.map((row) => `${row.label}: ${row.value}`), [
+    "bt: headunit.rootcanal, phone.controller · Failed · member phone is lost",
+  ]);
 });

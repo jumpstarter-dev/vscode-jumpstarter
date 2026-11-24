@@ -55,6 +55,13 @@
           "icon": "$(zap)"
         },
         {
+          "id": "jumpstarter.leaseTemplates",
+          "name": "Lease Templates",
+          "icon": "$(zap)",
+          "visibility": "collapsed",
+          "when": "jumpstarter.leaseTemplatesAvailable"
+        },
+        {
           "id": "jumpstarter.admin",
           "name": "Administration",
           "icon": "$(zap)",
@@ -177,6 +184,30 @@
         "title": "Open Local Exporter Shell",
         "category": "Jumpstarter",
         "icon": "$(terminal)"
+      },
+      {
+        "command": "jumpstarter.leaseFromTemplate",
+        "title": "Lease from Template\u2026",
+        "category": "Jumpstarter",
+        "icon": "$(layers)"
+      },
+      {
+        "command": "jumpstarter.leaseTemplates.lease",
+        "title": "Lease This Template\u2026",
+        "category": "Jumpstarter",
+        "icon": "$(play)"
+      },
+      {
+        "command": "jumpstarter.leaseTemplates.refresh",
+        "title": "Refresh Lease Templates",
+        "category": "Jumpstarter",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "jumpstarter.leaseTemplates.openDoc",
+        "title": "Open Template Documentation",
+        "category": "Jumpstarter",
+        "icon": "$(link-external)"
       },
       {
         "command": "jumpstarter.leases.refresh",
@@ -422,6 +453,14 @@
         {
           "command": "jumpstarter.leases.openDriverView",
           "when": "false"
+        },
+        {
+          "command": "jumpstarter.leaseTemplates.lease",
+          "when": "false"
+        },
+        {
+          "command": "jumpstarter.leaseTemplates.openDoc",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -508,6 +547,26 @@
         {
           "command": "jumpstarter.leases.toggleEnded",
           "when": "view == jumpstarter.leases",
+          "group": "navigation@2"
+        },
+        {
+          "command": "jumpstarter.leaseFromTemplate",
+          "when": "view == jumpstarter.leases && jumpstarter.leaseTemplatesAvailable",
+          "group": "navigation@1"
+        },
+        {
+          "command": "jumpstarter.leaseFromTemplate",
+          "when": "view == jumpstarter.exporters && jumpstarter.leaseTemplatesAvailable",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "jumpstarter.leaseFromTemplate",
+          "when": "view == jumpstarter.leaseTemplates",
+          "group": "navigation@1"
+        },
+        {
+          "command": "jumpstarter.leaseTemplates.refresh",
+          "when": "view == jumpstarter.leaseTemplates",
           "group": "navigation@2"
         }
       ],
@@ -671,6 +730,36 @@
           "command": "jumpstarter.leases.openDriverView",
           "when": "view == jumpstarter.leases && viewItem == jumpstarterDriver-web",
           "group": "1_run@1"
+        },
+        {
+          "command": "jumpstarter.leaseTemplates.lease",
+          "when": "view == jumpstarter.leaseTemplates && viewItem == jumpstarterLeaseTemplate",
+          "group": "inline@1"
+        },
+        {
+          "command": "jumpstarter.leaseTemplates.lease",
+          "when": "view == jumpstarter.leaseTemplates && viewItem == jumpstarterLeaseTemplate",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "jumpstarter.leaseTemplates.openDoc",
+          "when": "view == jumpstarter.leaseTemplates && viewItem == jumpstarterLeaseTemplateDoc",
+          "group": "inline@1"
+        },
+        {
+          "command": "jumpstarter.leases.openWebUi",
+          "when": "view == jumpstarter.leases && viewItem == jumpstarterRole-bound",
+          "group": "inline@1"
+        },
+        {
+          "command": "jumpstarter.leases.openWebUi",
+          "when": "view == jumpstarter.leases && viewItem == jumpstarterRole-bound",
+          "group": "1_run@1"
+        },
+        {
+          "command": "jumpstarter.leases.refreshDevices",
+          "when": "view == jumpstarter.leases && viewItem == jumpstarterRole-bound",
+          "group": "4_drivers@1"
         }
       ],
       "editor/title": [
@@ -746,7 +835,7 @@
             "type": "string"
           },
           "default": null,
-          "markdownDescription": "What **Open Screen** shows of a lease. Left unset, it is the lease's screen (the first display its drivers have a view for; a tool where there is no display); the other views open from their drivers in the Leases view. Set, the entries of [Jumpstarter Web](https://github.com/jumpstarter-dev/jumpstarter-web) it names are shown together in one tab: plugin ids (`hmi`), view ids (`hmi/screen`) or kinds of centre view (`@display`, `@tool`, `@terminal`); an empty list is the whole workbench."
+          "markdownDescription": "What **Open Screen** shows of a lease. Left unset, it is the lease's screen (the first display its drivers have a view for; a tool where there is no display); the other views open from their drivers in the Leases view. Set, the entries of [Jumpstarter Web](https://github.com/jumpstarter-dev/jumpstarter-web) it names are shown together in one tab: plugin ids (`hmi`), view ids (`hmi/screen`) or kinds of centre view (`@display`, `@tool`, `@terminal`); an empty list is the whole workbench. A lease with members (from a lease template) always opens as one tab with all its roles; a role's own screen and tools open from the role."
         },
         "jumpstarter.webUi.openIn": {
           "type": "string",

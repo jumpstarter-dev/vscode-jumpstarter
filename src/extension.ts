@@ -9,6 +9,7 @@ import { registerDetails } from "./features/details";
 import { registerClients } from "./features/clients";
 import { registerExporters } from "./features/exporters";
 import { registerLeases } from "./features/leases";
+import { registerLeaseTemplates } from "./features/leaseTemplates";
 import { registerWebUi, WebUiApi } from "./features/webUi";
 import { registerMcp, McpApi } from "./features/mcp";
 import { registerTesting } from "./features/testing";
@@ -26,8 +27,11 @@ import { registerManifests } from "./features/manifests";
  */
 export interface JumpstarterApi {
   services: Services;
-  /** The tree providers behind the four views, by view name. */
-  trees: Record<"clients" | "exporters" | "leases" | "admin", vscode.TreeDataProvider<unknown>>;
+  /** The tree providers behind the views, by view name. */
+  trees: Record<
+    "clients" | "exporters" | "leases" | "leaseTemplates" | "admin",
+    vscode.TreeDataProvider<unknown>
+  >;
   /** The Jumpstarter Web servers this window started. */
   webUi: WebUiApi;
   /** Jumpstarter's MCP server, as the editor's agents are offered it. */
@@ -100,6 +104,10 @@ export function activate(context: vscode.ExtensionContext): JumpstarterApi {
   // shell / run-in-lease terminals, extend/end lease)
   const leasesTree = registerLeases(context, services);
 
+  // FEATURE REGISTRATION: lease templates (tree view jumpstarter.leaseTemplates,
+  // hidden where the CLI has none; lease a template with its roles)
+  const leaseTemplatesTree = registerLeaseTemplates(context, services);
+
   // FEATURE REGISTRATION: web UI (open a lease's screen and tools in
   // Jumpstarter Web, served from inside the lease session)
   const webUi = registerWebUi(context, services, leasesTree);
@@ -137,6 +145,7 @@ export function activate(context: vscode.ExtensionContext): JumpstarterApi {
       clients: clientsTree,
       exporters: exportersTree,
       leases: leasesTree,
+      leaseTemplates: leaseTemplatesTree,
       admin: adminTree,
     },
     refreshAll: async () => {
@@ -144,6 +153,7 @@ export function activate(context: vscode.ExtensionContext): JumpstarterApi {
         "jumpstarter.clients.refresh",
         "jumpstarter.exporters.refresh",
         "jumpstarter.leases.refresh",
+        "jumpstarter.leaseTemplates.refresh",
         "jumpstarter.admin.refresh",
       ]) {
         await vscode.commands.executeCommand(command);
