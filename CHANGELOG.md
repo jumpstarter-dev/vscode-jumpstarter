@@ -6,6 +6,18 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+### Added
+
+- Native views: a lease's screen, and a driver's view, open as tabs of VS
+  Code's own with no server behind them. The extension starts
+  `jumpstarter-web bridge` inside the lease (one process per lease, nothing
+  listening on any port) and loads the view from files; a lease with members
+  opens one tab per role. The extension carries its own copy of Jumpstarter
+  Web, so any environment that has Jumpstarter works with nothing installed
+  into it. `jumpstarter.webUi.transport: "server"` is the framed page of a
+  Jumpstarter Web server, as before; **Open Web UI in Browser** always uses
+  one. **Stop Web UI Servers** ends the bridges too.
+
 ### Changed
 
 - Driver YAML completion, validation and driver-client allow-list suggestions

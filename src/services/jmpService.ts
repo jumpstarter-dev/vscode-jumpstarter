@@ -332,7 +332,7 @@ export class JmpService implements vscode.Disposable {
    */
   async run(
     args: string[],
-    opts: { timeoutMs?: number; invocation?: JmpInvocation } = {},
+    opts: { timeoutMs?: number; invocation?: JmpInvocation; env?: Record<string, string> } = {},
   ): Promise<RunResult> {
     const invocation = opts.invocation ?? (await this.getInvocation());
     const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -344,7 +344,7 @@ export class JmpService implements vscode.Disposable {
 
     return new Promise<RunResult>((resolve, reject) => {
       const child = spawn(invocation.command, fullArgs, {
-        env: { ...process.env, NO_COLOR: "1", COLUMNS: "4096" },
+        env: { ...process.env, NO_COLOR: "1", COLUMNS: "4096", ...opts.env },
         stdio: ["ignore", "pipe", "pipe"],
       });
 

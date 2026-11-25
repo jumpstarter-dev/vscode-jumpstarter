@@ -551,6 +551,54 @@ function respond() {
   return false;
 }
 
+// `jmp shell ... -- python -m jumpstarter_web bridge`: the lease's API over this process's pipes, as frames
+// (a length, a kind, a body). It says it is ready and where its page's files are, answers every request with
+// what it was asked, opens every channel, and ends with its input. JMP_FAKE_WEB=missing: no such module.
+if (startsWith("shell") && has("--", "jumpstarter_web", "bridge")) {
+  if (process.env.JMP_FAKE_WEB === "missing") {
+    process.stderr.write("/usr/bin/python: No module named jumpstarter_web\n");
+    process.exit(1);
+  }
+  const frame = (message) => {
+    const body = Buffer.from(JSON.stringify(message));
+    const head = Buffer.alloc(5);
+    head.writeUInt32BE(body.length + 1, 0);
+    process.stdout.write(Buffer.concat([head, body]));
+  };
+  const page = fileURLToPath(new URL("./page", import.meta.url));
+  frame({
+    event: "ready",
+    protocol: "jumpstarter.bridge/1",
+    version: "0.0.0-fake",
+    mode: process.env.JMP_FAKE_MEMBERS ? "members" : "lease",
+    files: { "/": page, "/plugins/power/": page },
+  });
+  let pending = Buffer.alloc(0);
+  process.stdin.on("data", (chunk) => {
+    pending = Buffer.concat([pending, chunk]);
+    while (pending.length >= 4 && pending.length >= 4 + pending.readUInt32BE(0)) {
+      const length = pending.readUInt32BE(0);
+      const body = pending.subarray(4, 4 + length);
+      pending = pending.subarray(4 + length);
+      if (body[0] !== 0) {
+        continue;
+      }
+      const message = JSON.parse(body.subarray(1).toString());
+      if (process.env.JMP_FAKE_LOG) {
+        appendFileSync(process.env.JMP_FAKE_LOG, JSON.stringify(["bridge", message.op, message.path ?? ""]) + "\n");
+      }
+      if (message.op === "request") {
+        frame({ event: "response", id: message.id, status: 200, json: { asked: message.path } });
+      } else if (message.op === "open") {
+        frame({ event: "open", channel: message.channel, protocol: "" });
+      } else if (message.op === "close") {
+        frame({ event: "close", channel: message.channel, code: 1000 });
+      }
+    }
+  });
+  process.stdin.on("end", () => process.exit(0));
+  process.on("SIGTERM", () => process.exit(0));
+} else
 // `jmp shell ... -- jumpstarter-web serve ...`: the one long-running thing the
 // extension spawns itself. Announce an address the way the real server does
 // and stay up until told to stop. JMP_FAKE_WEB=missing models an environment

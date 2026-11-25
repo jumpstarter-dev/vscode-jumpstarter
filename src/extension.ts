@@ -11,6 +11,8 @@ import { registerExporters } from "./features/exporters";
 import { registerLeases } from "./features/leases";
 import { registerLeaseTemplates } from "./features/leaseTemplates";
 import { registerWebUi, WebUiApi } from "./features/webUi";
+import { registerNativeViews, NativeViews } from "./features/nativeViews";
+import { LeaseBridges } from "./services/leaseBridge";
 import { registerMcp, McpApi } from "./features/mcp";
 import { registerTesting } from "./features/testing";
 import { registerSchemas } from "./features/schemas";
@@ -34,6 +36,8 @@ export interface JumpstarterApi {
   >;
   /** The Jumpstarter Web servers this window started. */
   webUi: WebUiApi;
+  /** The views shown as tabs of VS Code's own, through a lease's bridge. */
+  views: NativeViews;
   /** Jumpstarter's MCP server, as the editor's agents are offered it. */
   mcp: McpApi;
   /** Re-read every view from the CLI and settle. */
@@ -110,7 +114,12 @@ export function activate(context: vscode.ExtensionContext): JumpstarterApi {
 
   // FEATURE REGISTRATION: web UI (open a lease's screen and tools in
   // Jumpstarter Web, served from inside the lease session)
-  const webUi = registerWebUi(context, services, leasesTree);
+  // The lease's bridge and the views it serves as tabs of VS Code's own; a Jumpstarter Web server is the
+  // other way to show them (jumpstarter.webUi.transport), and the way to the whole workbench in a browser.
+  const bridges = new LeaseBridges(jmp, LeaseBridges.bundleIn(context.extensionPath));
+  context.subscriptions.push(bridges);
+  const nativeViews = registerNativeViews(context, services, bridges);
+  const webUi = registerWebUi(context, services, leasesTree, nativeViews);
 
   // FEATURE REGISTRATION: MCP (Jumpstarter's MCP server, offered to the
   // editor's agents with the jmp of the views)
@@ -140,6 +149,7 @@ export function activate(context: vscode.ExtensionContext): JumpstarterApi {
   return {
     services,
     webUi,
+    views: nativeViews,
     mcp,
     trees: {
       clients: clientsTree,

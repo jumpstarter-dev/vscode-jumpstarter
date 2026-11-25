@@ -845,6 +845,19 @@
           ],
           "markdownDescription": "Where a lease's screen and tools, and a driver's view, open. The full Web UI always opens in the system browser."
         },
+        "jumpstarter.webUi.transport": {
+          "type": "string",
+          "enum": [
+            "bridge",
+            "server"
+          ],
+          "default": "bridge",
+          "enumDescriptions": [
+            "A tab of VS Code's own for each view (a device's screen, an Appium Inspector), through the lease's bridge: nothing listens on any port. The extension carries what it needs, so any environment that has Jumpstarter works.",
+            "A panel that frames a page of a Jumpstarter Web server this window starts for the lease, on a loopback port (or a workspace endpoint). Needs `jumpstarter-web` installed in the environment."
+          ],
+          "markdownDescription": "How a lease's views are shown in a panel. **Open Web UI in Browser** always uses a server: that is Jumpstarter Web on its own."
+        },
         "jumpstarter.webUi.frameOrigins": {
           "type": [
             "array",

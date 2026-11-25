@@ -65,6 +65,8 @@ export async function activateWithFakeCli(experimentalCliFeatures = true): Promi
   // Most suites exercise the full integration contract; compatibility tests
   // explicitly select the default, current-main mode.
   await config.update("experimentalCliFeatures", experimentalCliFeatures, vscode.ConfigurationTarget.Global);
+  // The suites about Jumpstarter Web's own server say so; the one about native views sets it back.
+  await config.update("webUi.transport", "server", vscode.ConfigurationTarget.Global);
   // Poll rarely: the tests drive refreshes themselves, and a background tick
   // racing an assertion is the classic source of flakes here.
   await config.update("pollIntervalSeconds", 3600, vscode.ConfigurationTarget.Global);

@@ -41,6 +41,8 @@ import { isMemberLease, leaseTarget } from "./leases/members";
 import type { DriverNode, LeasesTreeProvider, RoleNode } from "./leases/provider";
 import * as model from "./webUi/model";
 import { buildMessageHtml, buildPanelHtml } from "./webUi/panel";
+import type { NativeViews } from "./nativeViews";
+import { withBundle } from "../services/leaseBridge";
 import { randomBytes } from "crypto";
 
 /** The type of a Jumpstarter panel: what VS Code restores them by. */
@@ -98,6 +100,7 @@ export function registerWebUi(
   context: vscode.ExtensionContext,
   services: Services,
   leases: LeasesTreeProvider,
+  nativeViews?: NativeViews,
 ): WebUiApi {
   const { jmp } = services;
 
@@ -117,10 +120,17 @@ export function registerWebUi(
   const refreshViews = async (): Promise<void> => {
     let found: model.WebView[] = [];
     try {
-      const [command, ...prefixArgs] = await webCommand();
+      const configured = vscode.workspace.getConfiguration("jumpstarter").get<string>("webUi.path", "").trim();
+      const bundle = configured.length === 0 ? nativeViews?.bundle : undefined;
+      // the extension's own copy of Jumpstarter Web, run by the environment's interpreter: what the bridge of a
+      // lease will be, so what it lists is what a view can show (the environment's own plugins are found too)
+      const [command, ...prefixArgs] = bundle
+        ? [await jmp.getSessionInterpreter(), "-m", "jumpstarter_web"]
+        : await webCommand();
       const result = await jmp.run(["plugins", "-o", "json"], {
         invocation: { command, prefixArgs },
         timeoutMs: 20_000,
+        ...(bundle ? { env: { PYTHONPATH: withBundle(bundle, process.env.PYTHONPATH) ?? bundle } } : {}),
       });
       found = model.parsePluginViews(result.stdout);
     } catch {
@@ -440,6 +450,68 @@ export function registerWebUi(
       ? "browser"
       : "panel";
 
+  /**
+   * Whether a view opens as a tab of VS Code's own, through the lease's bridge (the default), and not as a page
+   * of a Jumpstarter Web server this window starts (`jumpstarter.webUi.transport: "server"`, or the browser).
+   */
+  const native = (): NativeViews | undefined =>
+    preferred() === "panel" &&
+    vscode.workspace.getConfiguration("jumpstarter").get<string>("webUi.transport", "bridge") !== "server"
+      ? nativeViews
+      : undefined;
+
+  /** The first display (or tool) the drivers have a view for. */
+  const primaryOf = (drivers: readonly DriverNodeDescriptor[]): model.DriverView | undefined =>
+    model.primaryView(
+      drivers.flatMap((driver) =>
+        model
+          .viewsForDriver(driver.driverClass, driver.driverPath, views)
+          .map((view) => ({ driverPath: driver.driverPath, label: driver.label, view })),
+      ),
+    );
+
+  /**
+   * The screens of a lease, each in a tab of its own: the one of a lease of one exporter, one for every bound
+   * role of a lease with members (or for `onlyRole`). Whether there was any: a lease whose drivers cannot be
+   * read, or have no view, is shown the other way.
+   */
+  const openNativeScreens = async (direct: NativeViews, ref: LeaseRef, onlyRole?: string): Promise<boolean> => {
+    const found: { role?: string; primary: model.DriverView }[] = [];
+    try {
+      if (isMemberLease(ref.lease)) {
+        const roles = await jmp.describeRoleDrivers(ref.client, ref.lease.name);
+        for (const [role, described] of Object.entries(roles)) {
+          if ((onlyRole !== undefined && role !== onlyRole) || !("driver_tree" in described)) {
+            continue;
+          }
+          const primary = primaryOf(buildDriverNodes(described.driver_tree, role));
+          if (primary) {
+            found.push({ role, primary });
+          }
+        }
+      } else {
+        const tree = (await jmp.describeLeaseWithDrivers(ref.client, ref.lease.name)).driver_tree;
+        const primary = primaryOf(buildDriverNodes(tree));
+        if (primary) {
+          found.push({ primary });
+        }
+      }
+    } catch {
+      return false;
+    }
+    for (const { role, primary } of found) {
+      await direct.open({
+        client: ref.client,
+        lease: ref.lease.name,
+        ...(role ? { role } : {}),
+        driverPath: primary.driverPath,
+        view: primary.view,
+        title: `${primary.view.title}: ${role ?? primary.label}`,
+      });
+    }
+    return found.length > 0;
+  };
+
   const serverFor = (client: string, leaseName: string, role?: string): Thenable<RunningServer> =>
     vscode.window.withProgress(
       { location: { viewId: "jumpstarter.leases" }, title: "Starting Jumpstarter Web…" },
@@ -510,6 +582,11 @@ export function registerWebUi(
       return;
     }
     try {
+      const direct = native();
+      const lease = direct ? leases.leases.find((candidate) => candidate.name === node.leaseName) : undefined;
+      if (direct && lease && (await openNativeScreens(direct, { client: node.client, lease }, node.role.name))) {
+        return;
+      }
       const server = await serverFor(node.client, node.leaseName, node.role.name);
       await openTogether(
         server,
@@ -532,6 +609,12 @@ export function registerWebUi(
       return;
     }
     try {
+      const direct = focused && !Array.isArray(vscode.workspace.getConfiguration("jumpstarter").get("webUi.tools"))
+        ? native()
+        : undefined;
+      if (direct && (await openNativeScreens(direct, ref))) {
+        return;
+      }
       const server = await serverFor(ref.client, ref.lease.name);
       if (!focused) {
         // The whole workbench wants a window of its own.
@@ -596,6 +679,18 @@ export function registerWebUi(
       view = picked.view;
     }
     try {
+      const direct = native();
+      if (direct) {
+        await direct.open({
+          client: n.client,
+          lease: n.leaseName,
+          ...(n.role ? { role: n.role } : {}),
+          driverPath: n.descriptor.driverPath,
+          view,
+          title: `${view.title}: ${n.role ? `${n.role} ` : ""}${n.descriptor.label}`,
+        });
+        return;
+      }
       // (a driver of a role of a lease with members: the server of that role, where the driver's path is its own)
       const server = await serverFor(n.client, n.leaseName, n.role);
       if (preferred() === "browser") {
@@ -620,8 +715,14 @@ export function registerWebUi(
     vscode.commands.registerCommand("jumpstarter.webUi.stop", () => {
       const count = servers.size;
       stopAll();
+      // the bridges of the native views too: what a lease has running in this window, whichever way it is shown
+      const bridges = nativeViews?.stopBridges() ?? 0;
+      const stopped = [
+        ...(count > 0 ? [`${count} Web UI server(s)`] : []),
+        ...(bridges > 0 ? [`${bridges} lease bridge(s)`] : []),
+      ];
       void vscode.window.showInformationMessage(
-        count === 0 ? "Jumpstarter: no Web UI is running." : `Jumpstarter: stopped ${count} Web UI server(s).`,
+        stopped.length === 0 ? "Jumpstarter: no Web UI is running." : `Jumpstarter: stopped ${stopped.join(" and ")}.`,
       );
     }),
   );
