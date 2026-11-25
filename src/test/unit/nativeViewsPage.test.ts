@@ -2,7 +2,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildHostedPageHtml, fileRoots, moveIndex, routeOf } from "../../features/nativeViews/page";
+import { buildHostedPageHtml, buildProgressHtml, fileRoots, moveIndex, routeOf } from "../../features/nativeViews/page";
 import { bridgeCommand, withBundle } from "../../services/leaseBridge";
 
 const INDEX = `<!doctype html>
@@ -78,4 +78,12 @@ test("the bridge runs with the lease's own interpreter, and the extension's copy
   assert.equal(withBundle("/ext/python", undefined), "/ext/python");
   assert.match(withBundle("/ext/python", "/mine") ?? "", /^\/ext\/python[:;]\/mine$/);
   assert.equal(withBundle(undefined, "/mine"), "/mine");
+});
+
+test("a tab that is opening shows a spinner in the window's colours, and no sentence", () => {
+  const html = buildProgressHtml("n0nce", "Opening Screen: <phone>");
+  assert.ok(html.includes(`role="progressbar"`));
+  assert.ok(html.includes(`aria-label="Opening Screen: &#60;phone&#62;"`));
+  assert.ok(html.includes("background: var(--vscode-editor-background)"));
+  assert.equal(/<body>(.*)<\/body>/s.exec(html)?.[1].replace(/<[^>]*>/g, "").trim(), "");
 });

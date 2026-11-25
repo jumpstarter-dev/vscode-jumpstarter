@@ -43,6 +43,8 @@ export interface HostedPage {
   basePath?: string;
   /** What VS Code keeps with the panel, to make it again when the window is loaded again. */
   state?: unknown;
+  /** The page reports what it shows on its way to its view (texts, alerts): for finding what flashes. */
+  trace?: boolean;
 }
 
 /** The files as the page's `url()` looks them up: the longest path first. */
@@ -73,6 +75,7 @@ function hostScript(page: HostedPage): string {
     route: page.route,
     sources: HOST_TOKEN_SOURCES,
     state: page.state ?? null,
+    trace: page.trace === true,
   });
   return `(function () {
   var config = ${config};
@@ -108,12 +111,46 @@ function hostScript(page: HostedPage): string {
   var told = {};
   var notice = new MutationObserver(function () {
     var root = document.getElementById("root");
-    if (!told.rendered && root && root.childElementCount > 0) { told.rendered = true; report("rendered", document.title); }
+    if (!told.rendered && root && root.childElementCount > 0) {
+      told.rendered = true;
+      report("rendered", document.title);
+      // a moment later, what the page looks like against the window: its background is the editor's, or it is not
+      setTimeout(function () {
+        var probe = document.createElement("div");
+        probe.style.cssText = "position:absolute;visibility:hidden;background:var(--vscode-editor-background);color:var(--vscode-editor-foreground)";
+        document.body.appendChild(probe);
+        var editor = getComputedStyle(probe);
+        var colors = { editor: editor.backgroundColor, editorText: editor.color, surfaces: [] };
+        probe.remove();
+        // every surface from the page's root down to the view: the first that paints is what is seen
+        for (var el = document.querySelector("canvas, video, [class*=placeholder]") || root.firstElementChild; el; el = el.parentElement) {
+          var bg = getComputedStyle(el).backgroundColor;
+          if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") { colors.surfaces.push((el.id || el.className || el.tagName).toString().slice(0, 120) + " " + bg); }
+        }
+        colors.text = getComputedStyle(root).color;
+        colors.host = document.documentElement.getAttribute("data-host");
+        report("theme", JSON.stringify(colors));
+      }, 2500);
+    }
     var picture = document.querySelector("canvas, video");
     if (!told.picture && picture) { told.picture = true; report("picture", picture.tagName.toLowerCase()); }
     if (told.rendered && told.picture) { notice.disconnect(); }
   });
   document.addEventListener("DOMContentLoaded", function () { notice.observe(document.body, { childList: true, subtree: true }); });
+  // JUMPSTARTER_TRACE: what the page showed on its way to its view (its texts and alerts, as they came and went)
+  if (config.trace) {
+    var last = "";
+    var started = Date.now();
+    var sample = function () {
+      var alerts = Array.prototype.map.call(document.querySelectorAll("[class*=c-alert]:not([class*=c-alert__])"), function (el) {
+        return (/pf-m-(warning|danger|info|success)/.exec(el.className) || ["", "plain"])[1] + ": " + el.textContent.slice(0, 120);
+      });
+      var now = JSON.stringify({ text: (document.body ? document.body.innerText : "").replace(/\\s+/g, " ").slice(0, 160), alerts: alerts, spinner: !!document.querySelector("[class*=c-spinner], [role=progressbar]") });
+      if (now !== last) { last = now; report("trace", (Date.now() - started) + "ms " + now); }
+      if (Date.now() - started < 30000) { requestAnimationFrame(sample); }
+    };
+    requestAnimationFrame(sample);
+  }
   window.__JUMPSTARTER_HOST__ = {
     basePath: config.basePath,
     post: function (message) {
@@ -148,6 +185,8 @@ function hostScript(page: HostedPage): string {
   };
   // the page's route is in its address: one view, and nothing around it
   history.replaceState(null, "", "#" + config.route);
+  // (said before the page draws anything: its own title bar is never seen on the way to a view with none)
+  if (/[?&]chrome=none(&|$)/.test(config.route)) { document.documentElement.setAttribute("data-jw-chrome", "none"); }
 })();`;
 }
 
@@ -175,7 +214,8 @@ export function buildHostedPageHtml(page: HostedPage): string {
   ].join("; ");
   const head = [
     `<meta http-equiv="Content-Security-Policy" content="${escapeHtml(policy)}">`,
-    `<style nonce="${page.nonce}">html, body, #root { height: 100%; } body { margin: 0; padding: 0; }</style>`,
+    // (the editor's own background from the first paint, before the page has drawn anything on it)
+    `<style nonce="${page.nonce}">html, body, #root { height: 100%; } html, body { background: var(--vscode-editor-background); } body { margin: 0; padding: 0; }</style>`,
     `<script nonce="${page.nonce}">${hostScript(page)}</script>`,
   ].join("\n    ");
   let html = moveIndex(page.index, root)
@@ -192,4 +232,31 @@ export function buildHostedPageHtml(page: HostedPage): string {
 export function routeOf(link: string): string {
   const at = link.indexOf("#");
   return at < 0 ? "/" : link.slice(at + 1);
+}
+
+/**
+ * A tab while its view is on its way: a spinner in the middle, in the window's own colours, and nothing to read.
+ * What it waits for is said to a screen reader.
+ */
+export function buildProgressHtml(nonce: string, label: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'">
+<style nonce="${nonce}">
+  html, body { height: 100%; margin: 0; background: var(--vscode-editor-background); }
+  body { display: flex; align-items: center; justify-content: center; }
+  .spinner {
+    width: 28px; height: 28px; border-radius: 50%; box-sizing: border-box;
+    border: 3px solid color-mix(in srgb, var(--vscode-foreground) 20%, transparent);
+    border-top-color: var(--vscode-progressBar-background, var(--vscode-foreground));
+    animation: turn 0.9s linear infinite;
+  }
+  @keyframes turn { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+</style>
+</head>
+<body><div class="spinner" role="progressbar" aria-busy="true" aria-label="${escapeHtml(label)}"></div></body>
+</html>`;
 }

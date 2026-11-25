@@ -18,7 +18,7 @@ import * as path from "path";
 import { Services } from "../services";
 import type { LeaseBridges } from "../services/leaseBridge";
 import type { BridgeIncoming, BridgeOutgoing, BridgePort } from "../vendor/jumpstarter-api/bridge";
-import { buildHostedPageHtml, routeOf } from "./nativeViews/page";
+import { buildHostedPageHtml, buildProgressHtml, routeOf } from "./nativeViews/page";
 import { buildMessageHtml } from "./webUi/panel";
 import * as model from "./webUi/model";
 
@@ -174,6 +174,7 @@ export function registerNativeViews(
       route: routeOf(model.buildDriverViewLink("http://view.invalid", request.driverPath, request.view, "none")),
       basePath: request.role ? `/api/v1/roles/${encodeURIComponent(request.role)}` : "",
       state: kept,
+      trace: process.env.JUMPSTARTER_TRACE === "1",
     });
     panels.set(key, panel);
   };
@@ -227,7 +228,7 @@ export function registerNativeViews(
       { enableScripts: true, retainContextWhenHidden: true },
     );
     wire(panel, () => key);
-    message(panel, `Opening ${request.title}…`);
+    panel.webview.html = buildProgressHtml(randomBytes(16).toString("hex"), `Opening ${request.title}`);
     panels.set(key, panel);
     try {
       await vscode.window.withProgress(
@@ -258,7 +259,7 @@ export function registerNativeViews(
         }
         let key: string | undefined;
         wire(panel, () => key);
-        message(panel, `Opening ${kept.title} again…`);
+        panel.webview.html = buildProgressHtml(randomBytes(16).toString("hex"), `Opening ${kept.title} again`);
         try {
           await fill(panel, kept);
           key = viewKey(kept);

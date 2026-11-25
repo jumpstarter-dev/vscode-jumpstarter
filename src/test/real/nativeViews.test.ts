@@ -94,12 +94,23 @@ suite("native views, for real", () => {
       });
       // a moment for the view itself: its plugin is imported and asks the device what it has
       await new Promise((resolve) => setTimeout(resolve, Number(process.env.JMP_REAL_SETTLE ?? 8) * 1000));
-      console.log(`${key}\n  notes: ${JSON.stringify(seen.notes)}\n  sent: ${JSON.stringify(seen.sent)}\n  received: ${JSON.stringify(seen.received)}\n  bytes of pictures: ${seen.bytesReceived}`);
+      for (const note of seen.notes.filter((entry) => entry.kind === "trace")) {
+        console.log(`  trace ${note.text}`);
+      }
+      console.log(`${key}\n  notes: ${JSON.stringify(seen.notes.filter((entry) => entry.kind !== "trace"))}\n  sent: ${JSON.stringify(seen.sent)}\n  received: ${JSON.stringify(seen.received)}\n  bytes of pictures: ${seen.bytesReceived}`);
       assert.deepEqual(
         seen.notes.filter((note) => note.kind === "error" || note.kind === "blocked"),
         [],
         `${label}: the page reported a failure`,
       );
+      // the tab looks like the window: what is behind the view is the editor's own background
+      const theme = seen.notes.find((note) => note.kind === "theme");
+      assert.ok(theme, `${label}: the page did not say what it looks like`);
+      const colors = JSON.parse(theme.text) as { editor: string; surfaces: string[]; host: string | null };
+      assert.equal(colors.host, "true", "the page did not take the window's theme");
+      for (const surface of colors.surfaces.filter((entry) => !/jws-hmi(\s|$)|jws-hmi-stage/.test(entry))) {
+        assert.ok(surface.endsWith(colors.editor), `${label}: ${surface} is not the editor's background ${colors.editor}`);
+      }
       assert.ok((seen.sent.request ?? 0) > 0, `${label}: the page asked the bridge nothing`);
       assert.ok((seen.received.response ?? 0) > 0, `${label}: the bridge answered nothing`);
     }
