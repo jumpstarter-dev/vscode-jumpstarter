@@ -28,16 +28,6 @@ suite("current-main CLI compatibility", () => {
     });
   }
 
-  async function setDriverSchemas(enabled: boolean): Promise<void> {
-    await vscode.workspace.getConfiguration("jumpstarter")
-      .update("experimentalDriverSchemas", enabled, vscode.ConfigurationTarget.Global);
-    await waitFor("driver schemas to follow the setting", () => {
-      const availability = api.services.jmp.getAvailability();
-      return availability?.kind === "ok" &&
-        availability.capabilities.driverSchema === (enabled && availability.capabilities.adminApply);
-    });
-  }
-
   suiteSetup(async () => {
     process.env.JMP_FAKE_MAIN_ONLY = "1";
     api = await activateWithFakeCli(false);
@@ -47,7 +37,6 @@ suite("current-main CLI compatibility", () => {
   suiteTeardown(async () => {
     delete process.env.JMP_FAKE_MAIN_ONLY;
     await setExperimental(true);
-    await setDriverSchemas(true);
   });
 
   test("default-mode polling lists resources without unsupported commands", async () => {
@@ -79,7 +68,6 @@ suite("current-main CLI compatibility", () => {
     clearCliCalls();
     const jmp = api.services.jmp;
     for (const action of [
-      () => jmp.driverSchemas(),
       () => jmp.describeLeaseWithDrivers("fake", "lease-1234"),
       () => jmp.adminExporterSets(),
       () => jmp.adminApply(["unused.yaml"]),
@@ -140,65 +128,79 @@ suite("current-main CLI compatibility", () => {
     }
   });
 
-  test("client import accepts explicit driver patterns without driver schema", async () => {
+  test("client import accepts explicit driver patterns from a jmp without driver schema", async () => {
+    // The version promises the command; this build refuses it. The offer was
+    // to choose from the installed drivers, and the packages are typed instead.
+    process.env.JMP_FAKE_NO_DRIVER_SCHEMA = "1";
+    await api.services.jmp.probe();
     clearCliCalls();
     const restore = stubUi({
-      quickPicks: ["fake", "Enter driver packages"],
+      quickPicks: ["fake", "Choose driver packages"],
       inputs: [" jumpstarter_driver_power.*, jumpstarter_driver_serial.* "],
     });
     try {
       await vscode.commands.executeCommand("jumpstarter.importClientConfig");
     } finally {
       restore();
+      delete process.env.JMP_FAKE_NO_DRIVER_SCHEMA;
     }
     const call = expectCall("admin", "import", "client", "fake");
     assert.equal(call[call.indexOf("-a") + 1], "jumpstarter_driver_power.*,jumpstarter_driver_serial.*");
     assert.ok(!call.includes("--unsafe"));
-    assert.deepEqual(callsMatching("driver", "schema"), []);
+    assert.equal(callsMatching("driver", "schema").length, 1);
   });
 
   test("canceling manual driver access does not import a restricted config silently", async () => {
+    // (the service remembers the refusal of the test before: entering by hand is what is offered now)
+    assert.equal(api.services.jmp.hasCapability("driverSchema"), false);
     clearCliCalls();
     const restore = stubUi({ quickPicks: ["fake", "Enter driver packages"], inputs: [undefined] });
     try {
       await vscode.commands.executeCommand("jumpstarter.importClientConfig");
     } finally {
       restore();
+      await api.services.jmp.probe();
     }
     assert.deepEqual(callsMatching("admin", "import"), []);
+    assert.deepEqual(callsMatching("driver", "schema"), []);
   });
 
-  test("driver schema discovery needs its own opt-in and can be disabled live", async () => {
-    delete process.env.JMP_FAKE_MAIN_ONLY;
+  test("driver schema discovery needs no opt-in, and a jmp without it is asked once", async () => {
+    assert.equal(
+      vscode.workspace.getConfiguration("jumpstarter").inspect<boolean>("experimentalDriverSchemas")?.defaultValue,
+      undefined,
+      "the setting is gone",
+    );
+    assert.equal(api.services.jmp.hasCapability("describeDrivers"), false);
+    assert.equal(api.services.jmp.hasCapability("driverSchema"), true);
+    clearCliCalls();
+    await api.services.jmp.driverSchemas();
+    expectCall("driver", "schema");
+
+    // A development build of the same version from before the command.
+    process.env.JMP_FAKE_NO_DRIVER_SCHEMA = "1";
     try {
-      assert.equal(vscode.workspace.getConfiguration("jumpstarter")
-        .inspect<boolean>("experimentalDriverSchemas")?.defaultValue, false);
-      await setExperimental(true);
-      await setDriverSchemas(false);
+      await api.services.jmp.probe();
       clearCliCalls();
-      await assert.rejects(() => api.services.jmp.driverSchemas(), /experimentalDriverSchemas/);
-      assert.deepEqual(callsMatching("driver", "schema"), []);
-      assert.equal(api.services.jmp.hasCapability("describeDrivers"), true);
+      await assert.rejects(() => api.services.jmp.driverSchemas(), /No such command/);
+      assert.equal(callsMatching("driver", "schema").length, 1);
+      assert.equal(api.services.jmp.hasCapability("driverSchema"), false);
+      await assert.rejects(() => api.services.jmp.driverSchemas(), /requires a Jumpstarter CLI/);
+      assert.equal(callsMatching("driver", "schema").length, 1, "not asked a second time");
+
+      // ...and importing a client config then takes the packages typed by hand.
       const restore = stubUi({ quickPicks: ["fake", "Enter driver packages"], inputs: ["jumpstarter_driver_power.*"] });
       try {
         await vscode.commands.executeCommand("jumpstarter.importClientConfig");
       } finally {
         restore();
       }
-      assert.deepEqual(callsMatching("driver", "schema"), []);
-      expectCall("admin", "import", "client", "fake");
-      await setDriverSchemas(true);
-      await api.services.jmp.driverSchemas();
-      expectCall("driver", "schema");
-      await setDriverSchemas(false);
-      clearCliCalls();
-      await assert.rejects(() => api.services.jmp.driverSchemas(), /experimentalDriverSchemas/);
-      assert.deepEqual(callsMatching("driver", "schema"), []);
+      assert.equal(callsMatching("driver", "schema").length, 1);
     } finally {
-      await setExperimental(false);
-      await setDriverSchemas(false);
-      process.env.JMP_FAKE_MAIN_ONLY = "1";
+      delete process.env.JMP_FAKE_NO_DRIVER_SCHEMA;
+      await api.services.jmp.probe();
     }
+    assert.equal(api.services.jmp.hasCapability("driverSchema"), true);
   });
 
   test("opt-in and opt-out update capabilities and views without a reload", async () => {
@@ -207,14 +209,13 @@ suite("current-main CLI compatibility", () => {
       await setExperimental(true);
       await api.refreshAll();
       expectCall("admin", "get", "exporterset");
-      await setDriverSchemas(true);
       await api.services.jmp.driverSchemas();
       assert.ok((await childLabels(api.trees.leases, "lease-1")).length > 0);
       expectCall("describe", "lease");
       // A newly constructed service must still fail closed before its probe.
       const unprobed = new JmpService(api.services.output);
       try {
-        await assert.rejects(() => unprobed.driverSchemas(), /experimentalCliFeatures/);
+        await assert.rejects(() => unprobed.driverSchemas(), /requires a Jumpstarter CLI/);
       } finally {
         unprobed.dispose();
       }

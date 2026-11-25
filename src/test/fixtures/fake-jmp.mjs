@@ -70,7 +70,6 @@ const valueOf = (flag) => {
 // Model the missing APIs on upstream main instead of silently accepting the
 // integration-branch contract in default-mode tests.
 if (process.env.JMP_FAKE_MAIN_ONLY && (
-  startsWith("driver", "schema") ||
   (startsWith("describe", "lease") && (has("--drivers") || has("--devices"))) ||
   startsWith("admin", "get", "exporterset") ||
   startsWith("admin", "apply")
@@ -98,6 +97,12 @@ if (process.env.JMP_FAKE_NO_TEMPLATES && (
 if (process.env.JMP_FAKE_OLD_CONTROLLER && startsWith("get", "lease-templates")) {
   process.stderr.write("Error: the controller is too old for lease templates: upgrade the controller\n");
   process.exit(1);
+}
+
+// A `jmp` of the 0.10 line from before `driver schema` (jumpstarter-dev/jumpstarter#1071).
+if (process.env.JMP_FAKE_NO_DRIVER_SCHEMA && startsWith("driver", "schema")) {
+  process.stderr.write("Usage: jmp driver [OPTIONS] COMMAND [ARGS]...\nError: No such command 'schema'.\n");
+  process.exit(2);
 }
 
 // A `jmp` from before `get exporters --show-hidden-labels`.

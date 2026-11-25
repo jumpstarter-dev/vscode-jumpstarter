@@ -266,13 +266,13 @@ test("computeCapabilities gates current-main and experimental CLI features", () 
   const currentMain = computeCapabilities("0.10.0.dev34+g");
   assert.equal(currentMain.authStatus, true);
   assert.equal(currentMain.driverList, true);
-  assert.equal(currentMain.driverSchema, false);
+  assert.equal(currentMain.driverSchema, true);
   assert.equal(currentMain.describeDrivers, false);
   assert.equal(currentMain.adminApply, false);
   assert.equal(currentMain.adminExporterSets, false);
 
   const experimental = computeCapabilities("0.10.0.dev34+g", true);
-  assert.equal(experimental.driverSchema, false);
+  assert.equal(experimental.driverSchema, true);
   assert.equal(experimental.describeDrivers, true);
   assert.equal(experimental.adminApply, true);
   assert.equal(experimental.adminExporterSets, true);
@@ -281,16 +281,14 @@ test("computeCapabilities gates current-main and experimental CLI features", () 
   assert.equal(computeCapabilities("0.6.0").authStatus, false);
   for (const version of ["unknown", "0.10.0.dev53+gca3b4831", "1.0.0"]) {
     const defaults = computeCapabilities(version);
-    assert.equal(defaults.driverSchema, false);
+    // driver schema discovery is on main: no opt-in
+    assert.equal(defaults.driverSchema, true);
     assert.equal(defaults.describeDrivers, false);
     assert.equal(defaults.adminApply, false);
     assert.equal(defaults.adminExporterSets, false);
   }
-  for (const version of ["unknown", "0.10.0.dev53+gca3b4831", "1.0.0"]) {
-    assert.equal(computeCapabilities(version, true, true).driverSchema, true);
-    assert.equal(computeCapabilities(version, false, true).driverSchema, false);
-  }
-  const oldOptIn = computeCapabilities("0.6.0", true, true);
+  assert.equal(computeCapabilities("0.9.2").driverSchema, false);
+  const oldOptIn = computeCapabilities("0.6.0", true);
   assert.ok(Object.values(oldOptIn).every((enabled) => !enabled));
 });
 

@@ -551,7 +551,11 @@ export interface JmpCapabilities {
   authStatus: boolean;
   /** `jmp driver list -o json` exists. */
   driverList: boolean;
-  /** `jmp driver schema -o json` exists (per-driver config keys). */
+  /**
+   * `jmp driver schema -o json` exists (per-driver config keys). On main since
+   * jumpstarter-dev/jumpstarter#1071; a 0.10 development build from before it
+   * refuses the command, which JmpService remembers (see driverSchemas).
+   */
   driverSchema: boolean;
   /** Lease driver introspection exists (including the legacy integration-branch API). */
   describeDrivers: boolean;
@@ -591,7 +595,6 @@ export const MAIN_FEATURE_VERSION: [number, number, number] = [0, 10, 0];
 export function computeCapabilities(
   gitVersion: string,
   experimentalCliFeatures = false,
-  experimentalDriverSchemas = false,
 ): JmpCapabilities {
   const v = parseGitVersion(gitVersion);
   const atLeast = (min: [number, number, number]): boolean => {
@@ -614,7 +617,7 @@ export function computeCapabilities(
   return {
     authStatus: main,
     driverList: main,
-    driverSchema: experimental && experimentalDriverSchemas,
+    driverSchema: main,
     describeDrivers: experimental,
     exporterStatusColumns: main,
     leaseStatus: main,

@@ -113,6 +113,8 @@ export class JmpService implements vscode.Disposable {
   private portsUnsupported = false;
   /** Set once this `jmp` refused `--show-hidden-labels`: it is not passed again until the next probe. */
   private hiddenLabelsUnsupported = false;
+  /** Set once this `jmp` had no `driver schema` command: it is not asked again until the next probe. */
+  private driverSchemaUnsupported = false;
 
   constructor(output?: vscode.OutputChannel) {
     this.output = output ?? vscode.window.createOutputChannel("Jumpstarter");
@@ -126,8 +128,7 @@ export class JmpService implements vscode.Disposable {
         }
         if (
           e.affectsConfiguration("jumpstarter.jmpPath") ||
-          e.affectsConfiguration("jumpstarter.experimentalCliFeatures") ||
-          e.affectsConfiguration("jumpstarter.experimentalDriverSchemas")
+          e.affectsConfiguration("jumpstarter.experimentalCliFeatures")
         ) {
           void this.probe();
         }
@@ -171,6 +172,9 @@ export class JmpService implements vscode.Disposable {
     if (this.availability?.kind !== "ok") {
       return false;
     }
+    if (capability === "driverSchema" && this.driverSchemaUnsupported) {
+      return false;
+    }
     return this.configuredCapabilities(this.availability.version.gitVersion)[capability];
   }
 
@@ -179,7 +183,6 @@ export class JmpService implements vscode.Disposable {
     return protocol.computeCapabilities(
       gitVersion,
       config.get<boolean>("experimentalCliFeatures", false),
-      config.get<boolean>("experimentalDriverSchemas", false),
     );
   }
 
@@ -187,8 +190,9 @@ export class JmpService implements vscode.Disposable {
     if (!this.hasCapability(capability)) {
       throw new JmpError(
         "usage",
-        `${command} requires a compatible integration-branch CLI and jumpstarter.experimentalCliFeatures enabled.` +
-          (capability === "driverSchema" ? " Also enable jumpstarter.experimentalDriverSchemas." : ""),
+        capability === "driverSchema"
+          ? `${command} requires a Jumpstarter CLI that has it (0.10 or later).`
+          : `${command} requires a compatible integration-branch CLI and jumpstarter.experimentalCliFeatures enabled.`,
       );
     }
   }
@@ -203,6 +207,7 @@ export class JmpService implements vscode.Disposable {
     this.ports.clear();
     this.portsUnsupported = false;
     this.hiddenLabelsUnsupported = false;
+    this.driverSchemaUnsupported = false;
     // Probes can overlap (activation, a settings change, an interpreter change) and one of a slow CLI can end
     // after one that started later: only the answer of the latest probe says what is available now.
     const mine = ++this.probes;
@@ -717,13 +722,26 @@ export class JmpService implements vscode.Disposable {
    *
    * Loading every driver class is comparatively slow (seconds on a large
    * environment), so callers should cache the result per interpreter.
+   *
+   * The version says too little about a development build: one from before
+   * the command refuses it. That is remembered, so the capability is off (YAML
+   * completion from the bundled schemas, driver packages typed by hand) until
+   * the next probe, which another interpreter or another `jmp` brings.
    */
   async driverSchemas(): Promise<DriverSchema[]> {
     this.requireCapability("driverSchema", "jmp driver schema");
-    const res = await this.runJson<DriverSchemaResponse>(protocol.buildDriverSchemaArgs(), {
-      timeoutMs: 120_000,
-    });
-    return res.drivers ?? [];
+    try {
+      const res = await this.runJson<DriverSchemaResponse>(protocol.buildDriverSchemaArgs(), {
+        timeoutMs: 120_000,
+      });
+      return res.drivers ?? [];
+    } catch (err) {
+      if (err instanceof JmpError && err.kind === "usage" && /no such command/i.test(err.stderr)) {
+        this.driverSchemaUnsupported = true;
+        this.log("this jmp has no `driver schema`: YAML completion uses the bundled schemas alone");
+      }
+      throw err;
+    }
   }
 
   /** `jmp describe exporter <name> -o json --client <client>` */

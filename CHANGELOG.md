@@ -8,6 +8,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
+- Driver YAML completion, validation and driver-client allow-list suggestions
+  are no longer experimental: `jmp driver schema` is on Jumpstarter's `main`
+  (jumpstarter-dev/jumpstarter#1071). The setting
+  `jumpstarter.experimentalDriverSchemas` is gone, and
+  `jumpstarter.experimentalCliFeatures` is not needed for them. A `jmp`
+  without the command is asked once and the bundled schemas are used.
 - An exporter set's exporters are grouped under it when the controller hides
   the labels that name the set: they are asked for
   (`jmp get exporters --show-hidden-labels`), and a `jmp` without the option

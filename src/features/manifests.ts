@@ -154,9 +154,10 @@ async function pickDriverAccess(
     return {};
   }
 
-  // Main can import an explicit allow-list, but cannot discover client classes.
-  // Do not guess client package names from exporter driver types.
-  if (!canListDrivers) {
+  // A jmp without `driver schema` can import an explicit allow-list, but cannot
+  // discover client classes. Do not guess client package names from exporter
+  // driver types.
+  const enterByHand = async (): Promise<{ allow?: string[] } | undefined> => {
     const raw = await vscode.window.showInputBox({
       title: "Allowed driver clients",
       prompt: "Comma-separated driver client package patterns; leave empty to allow none",
@@ -166,6 +167,9 @@ async function pickDriverAccess(
     return raw === undefined
       ? undefined
       : { allow: raw.split(",").map((value) => value.trim()).filter(Boolean) };
+  };
+  if (!canListDrivers) {
+    return enterByHand();
   }
 
   let entries: { value: string; documentation: string }[] = [];
@@ -173,6 +177,12 @@ async function pickDriverAccess(
     entries = driverAllowEntries(await services.jmp.driverSchemas());
   } catch (err) {
     services.jmp.log(`[manifests] driver schema listing failed: ${String(err)}`);
+    // The version promised the command and this build does not have it (a
+    // development build from before it): the packages are typed instead,
+    // rather than a config imported with no access.
+    if (!services.jmp.hasCapability("driverSchema")) {
+      return enterByHand();
+    }
   }
   if (entries.length === 0) {
     void vscode.window.showWarningMessage(

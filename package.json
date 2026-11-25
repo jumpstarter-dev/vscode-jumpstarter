@@ -798,12 +798,7 @@
         "jumpstarter.experimentalCliFeatures": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Enable Jumpstarter CLI features that are not yet available on the current `main` branch. Use only with the `ide-cli-integration` CLI branch."
-        },
-        "jumpstarter.experimentalDriverSchemas": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "Enable environment-aware driver YAML completion, validation, and driver-client allow-list suggestions. Requires `jumpstarter.experimentalCliFeatures` and a compatible CLI providing `jmp driver schema`. Imports locally installed driver modules to inspect them; leave disabled unless you trust those packages."
+          "markdownDescription": "Enable Jumpstarter CLI features that are not yet available on the current `main` branch. Use only with the `ide-cli-integration` CLI branch. Driver YAML completion is not one of them: it needs only a `jmp` with `jmp driver schema`."
         },
         "jumpstarter.admin.namespace": {
           "type": "string",

@@ -48,8 +48,8 @@ so reload (or bump the version) whenever you rebuild.
 ## Jumpstarter CLI compatibility
 
 Jumpstarter CLI compatibility is explicit. The
-current `main` branch (reviewed at `ca3b4831`) contains the prerequisite PRs needed for authentication,
-JSON status output, exporter/lease listing, client redaction, driver listing,
+current `main` branch (reviewed at `a45e3523`) contains the prerequisite PRs needed for authentication,
+JSON status output, exporter/lease listing, client redaction, driver listing, driver schema discovery,
 `jmp describe` (without driver introspection), and administration labels:
 
 | Change | Status on `main` |
@@ -62,6 +62,7 @@ JSON status output, exporter/lease listing, client redaction, driver listing,
 | `cli-driver-list-json` | [merged, #1041](https://github.com/jumpstarter-dev/jumpstarter/pull/1041) |
 | `cli-describe` | [merged, #1043](https://github.com/jumpstarter-dev/jumpstarter/pull/1043) |
 | `cli-admin-object-labels` | [merged, #1044](https://github.com/jumpstarter-dev/jumpstarter/pull/1044) |
+| `cli-driver-schema` | [merged, #1071](https://github.com/jumpstarter-dev/jumpstarter/pull/1071) |
 
 The remaining prerequisites are deferred for now: `cli-fix-shell-hook-log`
 ([#1039](https://github.com/jumpstarter-dev/jumpstarter/pull/1039)),
@@ -73,20 +74,24 @@ The remaining prerequisites are deferred for now: `cli-fix-shell-hook-log`
 ([#1045](https://github.com/jumpstarter-dev/jumpstarter/pull/1045)) remain
 open. Lease driver introspection is now proposed as `cli-describe-drivers`
 ([#1070](https://github.com/jumpstarter-dev/jumpstarter/pull/1070)), depending on
-#1042. `cli-driver-schema` and `cli-admin-exportersets` remain branch-only changes.
+#1042. `cli-admin-exportersets` remains a branch-only change.
 
 The pending shell-log and missing-credentials fixes do not add APIs: shells
 and config imports remain available on `main`, but may show misleading hook
 messages or a less helpful error when credentials have not been issued.
 
 The extension defaults to the current-main contract. The features requiring
-the branch-only CLI APIs — driver schema completion, lease driver browsing,
-and exporter-set administration — are disabled by default by
-`jumpstarter.experimentalCliFeatures`. Driver schemas additionally require
-`jumpstarter.experimentalDriverSchemas` (also default `false`), so other
-experimental features can be enabled without importing local driver modules
-for schema discovery. Only enable schema discovery for trusted driver packages.
-Without it, bundled YAML schemas and manual driver allow-list entry still work.
+the branch-only CLI APIs — lease driver browsing and exporter-set
+administration — are disabled by default by
+`jumpstarter.experimentalCliFeatures`.
+
+Driver YAML completion, validation and driver-client allow-list suggestions
+need no opt-in: they use `jmp driver schema`, which is on `main`. It imports
+the driver packages installed in the selected environment to read their
+configuration, as running an exporter from that environment would. A `jmp`
+without the command (a release before 0.10, or a 0.10 development build from
+before #1071) is asked once: the bundled YAML schemas and manual driver
+allow-list entry are what is used then.
 Resource drafting, apply, and validation
 work on `main` using `kubectl apply` and `kubectl apply --dry-run=server`.
 With experimental CLI features enabled, apply uses `jmp admin apply` instead.
@@ -107,8 +112,7 @@ Then select `<jumpstarter>/python/.venv/bin/python` in VS Code and enable
 ```json
 {
   "jumpstarter.jmpPath": "<jumpstarter>/python/.venv/bin/jmp",
-  "jumpstarter.experimentalCliFeatures": true,
-  "jumpstarter.experimentalDriverSchemas": true
+  "jumpstarter.experimentalCliFeatures": true
 }
 ```
 
