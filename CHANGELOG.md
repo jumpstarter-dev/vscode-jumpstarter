@@ -6,6 +6,13 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+### Changed
+
+- An exporter set's exporters are grouped under it when the controller hides
+  the labels that name the set: they are asked for
+  (`jmp get exporters --show-hidden-labels`), and a `jmp` without the option
+  is asked without it.
+
 ### Added
 
 - Leases with members (JEP-0015) and port forwards (JEP-0016): a lease made

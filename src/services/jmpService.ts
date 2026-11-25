@@ -111,6 +111,8 @@ export class JmpService implements vscode.Disposable {
   private readonly ports = new Map<string, { value: Record<string, ExporterPort[]>; until: number }>();
   /** Set once this `jmp` refused `--with ports`: it is not asked again until the next probe. */
   private portsUnsupported = false;
+  /** Set once this `jmp` refused `--show-hidden-labels`: it is not passed again until the next probe. */
+  private hiddenLabelsUnsupported = false;
 
   constructor(output?: vscode.OutputChannel) {
     this.output = output ?? vscode.window.createOutputChannel("Jumpstarter");
@@ -200,6 +202,7 @@ export class JmpService implements vscode.Disposable {
     this.forgetSharedReads();
     this.ports.clear();
     this.portsUnsupported = false;
+    this.hiddenLabelsUnsupported = false;
     // Probes can overlap (activation, a settings change, an interpreter change) and one of a slow CLI can end
     // after one that started later: only the answer of the latest probe says what is available now.
     const mine = ++this.probes;
@@ -426,9 +429,30 @@ export class JmpService implements vscode.Disposable {
     return this.runJson<JmpVersion>(protocol.buildVersionArgs());
   }
 
-  /** `jmp get exporters --with leases,online,status -o json --client <client>` */
+  /**
+   * `jmp get exporters --with leases,online,status --show-hidden-labels -o json --client <client>`
+   *
+   * The hidden labels are what say which ExporterSet an exporter belongs to.
+   * A `jmp` from before the option refuses it: it is then asked without, and
+   * a pool's exporters are shown one by one.
+   */
   async getExporters(client: string): Promise<Exporter[]> {
-    const res = await this.runJson<GetExportersResponse>(protocol.buildGetExportersArgs(client));
+    let res: GetExportersResponse;
+    try {
+      res = await this.runJson<GetExportersResponse>(
+        protocol.buildGetExportersArgs(client, !this.hiddenLabelsUnsupported),
+      );
+    } catch (err) {
+      if (this.hiddenLabelsUnsupported || !protocol.isNoSuchOption(err, protocol.SHOW_HIDDEN_LABELS_OPTION)) {
+        throw err;
+      }
+      this.hiddenLabelsUnsupported = true;
+      this.log(
+        `this jmp has no \`get exporters ${protocol.SHOW_HIDDEN_LABELS_OPTION}\`: ` +
+          "the exporters of an exporter set are shown one by one",
+      );
+      res = await this.runJson<GetExportersResponse>(protocol.buildGetExportersArgs(client, false));
+    }
     return (res.exporters ?? []).map(protocol.normalizeExporter);
   }
 

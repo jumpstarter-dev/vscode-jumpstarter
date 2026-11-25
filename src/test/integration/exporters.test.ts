@@ -7,6 +7,7 @@ import * as assert from "assert";
 import * as vscode from "vscode";
 import {
   activateWithFakeCli,
+  callsMatching,
   captureTerminal,
   clearCliCalls,
   expectCall,
@@ -105,6 +106,42 @@ suite("exporters", () => {
       "exporterset.jumpstarter.dev/name=qemu-pool",
     ]);
     assert.ok(!call.includes("-n"), "a pool lease must not name an exporter");
+  });
+
+  test("a pool is known by labels the controller hides unless asked", async () => {
+    clearCliCalls();
+    await api.services.jmp.getExporters("fake");
+    assert.ok(expectCall("get", "exporters").includes("--show-hidden-labels"));
+    assert.ok((await treeLabels(api.trees.exporters)).includes("qemu-pool"));
+  });
+
+  test("a jmp without the hidden labels option still lists the exporters", async () => {
+    process.env.JMP_FAKE_NO_HIDDEN_LABELS = "1";
+    clearCliCalls();
+    try {
+      const exporters = await api.services.jmp.getExporters("fake");
+      // Asked once with the option, refused, asked again without: the pool's
+      // member is there, as an exporter like any other.
+      const member = exporters.find((exporter) => exporter.name === "pool-member-1");
+      assert.deepEqual(member?.labels, { board: "qemu" });
+      // (the Leases view asks for the exporters' ports with a command of its own)
+      const listings = (): string[][] =>
+        callsMatching("get", "exporters").filter((call) => call.includes("leases,online,status"));
+      // (and the view may be reading at the same moment, after the lease of the test before)
+      const calls = listings();
+      assert.ok(calls.some((call) => call.includes("--show-hidden-labels")), "the option is tried first");
+      assert.ok(!calls[calls.length - 1].includes("--show-hidden-labels"), "then it is asked without");
+
+      // ...and it is not asked for what it refused a second time.
+      clearCliCalls();
+      await api.services.jmp.getExporters("fake");
+      assert.ok(listings().length >= 1);
+      assert.ok(listings().every((call) => !call.includes("--show-hidden-labels")));
+    } finally {
+      delete process.env.JMP_FAKE_NO_HIDDEN_LABELS;
+      // The next probe is what makes the service try the option again.
+      await api.services.jmp.probe();
+    }
   });
 
   test("leasing by selector builds one label at a time", async () => {

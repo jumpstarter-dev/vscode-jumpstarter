@@ -100,6 +100,12 @@ if (process.env.JMP_FAKE_OLD_CONTROLLER && startsWith("get", "lease-templates"))
   process.exit(1);
 }
 
+// A `jmp` from before `get exporters --show-hidden-labels`.
+if (process.env.JMP_FAKE_NO_HIDDEN_LABELS && has("--show-hidden-labels")) {
+  process.stderr.write("Usage: jmp get exporters [OPTIONS]\nError: No such option: --show-hidden-labels\n");
+  process.exit(2);
+}
+
 if (process.env.JMP_FAKE_LEGACY_DRIVERS && startsWith("describe", "lease") && has("--drivers")) {
   process.stderr.write("Error: No such option: --drivers\n");
   process.exit(2);
@@ -272,7 +278,20 @@ const responses = [
     () => startsWith("get", "exporters") && (valueOf("--with") ?? "").split(",").includes("ports"),
     fixture("exporters-ports.json"),
   ],
-  [() => startsWith("get", "exporters"), exporters],
+  // The controller is configured to hide the labels that name an exporter's set, as a lab's usually is:
+  // they are in the answer only when asked for.
+  [() => startsWith("get", "exporters") && has("--show-hidden-labels"), exporters],
+  [
+    () => startsWith("get", "exporters"),
+    {
+      exporters: exporters.exporters.map((exporter) => ({
+        ...exporter,
+        labels: Object.fromEntries(
+          Object.entries(exporter.labels).filter(([key]) => !key.startsWith("exporterset.jumpstarter.dev/")),
+        ),
+      })),
+    },
+  ],
   // JMP_FAKE_MEMBERS adds the leases with members of the real CLI's output to the one lease of one exporter:
   // the suites that are about that one lease do not have to tell them apart.
   [

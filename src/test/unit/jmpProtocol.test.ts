@@ -24,6 +24,7 @@ import {
   computeCapabilities,
   extractWarnings,
   JmpError,
+  isNoSuchOption,
   parseGitVersion,
   redactSecretArgs,
   buildDirectShellArgs,
@@ -128,11 +129,22 @@ test("getExporters args include status columns and explicit client", () => {
     "exporters",
     "--with",
     "leases,online,status",
+    "--show-hidden-labels",
     "-o",
     "json",
     "--client",
     "lab",
   ]);
+});
+
+test("getExporters args leave the hidden labels out for a jmp without the option", () => {
+  assert.ok(!buildGetExportersArgs("lab", false).includes("--show-hidden-labels"));
+  const refused = new JmpError("usage", "jmp exited with code 2", {
+    stderr: "Usage: jmp get exporters [OPTIONS]\nError: No such option: --show-hidden-labels\n",
+  });
+  assert.ok(isNoSuchOption(refused, "--show-hidden-labels"));
+  assert.ok(!isNoSuchOption(refused, "--with"));
+  assert.ok(!isNoSuchOption(new Error("No such option: --show-hidden-labels"), "--show-hidden-labels"));
 });
 
 test("getLeases args honor includeEnded", () => {

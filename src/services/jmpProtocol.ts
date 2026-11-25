@@ -197,17 +197,37 @@ export function buildVersionArgs(): string[] {
   return ["version", "-o", "json"];
 }
 
-export function buildGetExportersArgs(client: string): string[] {
+/**
+ * `jmp get exporters --with leases,online,status [--show-hidden-labels] -o json --client <client>`
+ *
+ * A controller can be configured to hide labels from listings, and the labels
+ * that say which ExporterSet an exporter belongs to are the usual ones hidden:
+ * without them a pool's members look like exporters that stand alone. They are
+ * asked for unless this `jmp` has no such option (see isNoSuchOption).
+ */
+export function buildGetExportersArgs(client: string, showHiddenLabels = true): string[] {
   return [
     "get",
     "exporters",
     "--with",
     "leases,online,status",
+    ...(showHiddenLabels ? [SHOW_HIDDEN_LABELS_OPTION] : []),
     "-o",
     "json",
     "--client",
     client,
   ];
+}
+
+export const SHOW_HIDDEN_LABELS_OPTION = "--show-hidden-labels";
+
+/** Whether a failed command was refused because this `jmp` has no such option. */
+export function isNoSuchOption(error: unknown, option: string): boolean {
+  return (
+    error instanceof JmpError &&
+    error.kind === "usage" &&
+    error.stderr.toLowerCase().includes(`no such option: ${option}`)
+  );
 }
 
 /**
