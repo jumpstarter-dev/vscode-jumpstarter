@@ -151,8 +151,31 @@ function hostScript(page: HostedPage): string {
     };
     requestAnimationFrame(sample);
   }
+  var watched = [];
+  setInterval(function () {
+    Array.prototype.forEach.call(document.querySelectorAll("iframe"), function (frame) {
+      var page;
+      try { page = frame.contentWindow; if (!page || !page.document) { return; } } catch (e) { return; }
+      if (watched.indexOf(page) >= 0) { return; }
+      watched.push(page);
+      page.addEventListener("error", function (event) { report("error", "frame: " + (event.message || event.error)); });
+      page.addEventListener("unhandledrejection", function (event) { report("error", "frame: " + (event.reason && event.reason.message || event.reason)); });
+      page.document.addEventListener("securitypolicyviolation", function (event) {
+        report("blocked", "frame: " + event.violatedDirective + " " + event.blockedURI);
+      });
+    });
+  }, 250);
   window.__JUMPSTARTER_HOST__ = {
     basePath: config.basePath,
+    // a tab is one view: VS Code has its own places for anything else, and the view keeps its own tools
+    standalone: true,
+    // An empty page of this origin that VS Code knows as part of this webview (the blank page a webview's own
+    // content is written into, named by the webview's id): a frame given it can load the plugin's files, where a
+    // frame with no address gets a 404 for each.
+    emptyPage: (function () {
+      var id = new URLSearchParams(location.search).get("id");
+      return id ? location.origin + "/fake.html?id=" + encodeURIComponent(id) : undefined;
+    })(),
     post: function (message) {
       if (message.data instanceof Uint8Array) {
         var bytes = message.data;
@@ -211,6 +234,9 @@ export function buildHostedPageHtml(page: HostedPage): string {
     "media-src blob: mediastream:",
     `connect-src ${source}`,
     "worker-src blob:",
+    // a frame of the page's own making, with no address (a plugin's page that the plugin has to reach into: the
+    // Appium Inspector). It is this document's origin and under this policy; a frame of anywhere else is refused.
+    "frame-src 'self' blob:",
   ].join("; ");
   const head = [
     `<meta http-equiv="Content-Security-Policy" content="${escapeHtml(policy)}">`,

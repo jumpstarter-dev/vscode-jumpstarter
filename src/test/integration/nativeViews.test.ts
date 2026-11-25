@@ -84,7 +84,7 @@ suite("native views", () => {
     assert.ok(html.includes("window.__JUMPSTARTER_HOST__"));
     assert.ok(!html.includes("<iframe"));
     assert.ok(/src="https:\/\/[^"]+\/assets\/index\.js"/.test(html), html);
-    assert.ok(html.includes(`"route":"/d/power?view=power%2Fmeter%23power&only=power&chrome=none"`));
+    assert.ok(html.includes(`"route":"/d/power?view=power%2Fmeter%23power&only=power%2Fmeter&chrome=none"`));
     assert.ok(html.includes(`"basePath":""`));
   });
 

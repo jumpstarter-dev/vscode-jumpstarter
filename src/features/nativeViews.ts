@@ -171,7 +171,8 @@ export function registerNativeViews(
       cspSource: panel.webview.cspSource,
       nonce: randomBytes(16).toString("hex"),
       title: request.title,
-      route: routeOf(model.buildDriverViewLink("http://view.invalid", request.driverPath, request.view, "none")),
+      route: routeOf(model.// (the view and nothing of its plugin beside it: a tab is one view)
+        buildDriverViewLink("http://view.invalid", request.driverPath, request.view, "none", true)),
       basePath: request.role ? `/api/v1/roles/${encodeURIComponent(request.role)}` : "",
       state: kept,
       trace: process.env.JUMPSTARTER_TRACE === "1",

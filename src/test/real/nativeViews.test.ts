@@ -5,7 +5,8 @@
  * Nothing is replaced. Each driver that has a view is opened in a tab; the
  * page in it says what it did (it drew, it shows a picture, what failed, what
  * its policy blocked), and the extension counts what went over the bridge.
- * JMP_REAL_HOLD (seconds) keeps the window open after, to look at it.
+ * JMP_REAL_HOLD (seconds) keeps the window open after, to look at it. JMP_REAL_LEASE names the lease to use,
+ * where the client holds more than one; JMP_REAL_VIEWS the drivers to open (by label).
  */
 
 import * as assert from "assert";
@@ -49,7 +50,10 @@ suite("native views, for real", () => {
       await vscode.commands.executeCommand("jumpstarter.leases.refresh");
       for (const node of (await api.trees.leases.getChildren()) ?? []) {
         const item = await api.trees.leases.getTreeItem(node);
-        if (String(item.description ?? "").includes("In-Use")) {
+        // JMP_REAL_LEASE names the lease to use: the client may hold others, which are someone's work
+        const name = (node as { lease?: { name?: string } }).lease?.name;
+        const wanted = process.env.JMP_REAL_LEASE;
+        if (String(item.description ?? "").includes("In-Use") && (!wanted || name === wanted)) {
           return node;
         }
       }

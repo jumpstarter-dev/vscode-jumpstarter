@@ -276,11 +276,12 @@ export function buildDriverViewLink(
   driverPath: readonly string[],
   view: WebView,
   chrome: Chrome = "minimal",
+  alone = false,
 ): string {
   const url = new URL(serverUrl);
   const path = driverPath.map((segment) => encodeURIComponent(segment)).join("/");
   const instance = encodeURIComponent(`${view.id}#${driverPath.join("/")}`);
-  url.hash = `#/d/${path}?view=${instance}&only=${encodeURIComponent(view.plugin)}&chrome=${chrome}`;
+  url.hash = `#/d/${path}?view=${instance}&only=${encodeURIComponent(alone ? view.id : view.plugin)}&chrome=${chrome}`;
   return url.toString();
 }
 

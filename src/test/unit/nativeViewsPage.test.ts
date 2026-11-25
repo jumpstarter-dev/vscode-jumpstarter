@@ -54,7 +54,7 @@ test("the document sets the page's host before the page's script, and lets it lo
   assert.ok(policy.includes("default-src &#39;none&#39;"));
   assert.ok(policy.includes("script-src &#39;nonce-n0nce&#39; https://files.test"));
   // no frame and no address to call: the view's data comes over postMessage
-  assert.ok(!policy.includes("frame-src"));
+  assert.ok(policy.includes("frame-src &#39;self&#39; blob:"), "only a frame of the page's own making");
   assert.ok(!/connect-src[^;]*(http:|ws:|\*)/.test(policy));
   assert.ok(!html.includes("<iframe"));
 });

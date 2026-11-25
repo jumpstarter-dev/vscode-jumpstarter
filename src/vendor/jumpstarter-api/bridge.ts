@@ -425,6 +425,36 @@ class BridgeResponse implements HttpResponseLike {
   }
 }
 
+/** The platform's own `Response`, where it has one (a browser, a webview, Node): its constructor, as far as used. */
+type ResponseConstructor = new (
+  body: Uint8Array<ArrayBuffer> | null,
+  init: { status: number; headers: Record<string, string> },
+) => HttpResponseLike;
+
+function isResponseConstructor(value: unknown): value is ResponseConstructor {
+  return typeof value === "function";
+}
+
+/** Statuses that have no body: a `Response` refuses one. */
+const NO_BODY = new Set([101, 204, 205, 304]);
+
+/**
+ * An answer of the bridge as a caller of `fetch` expects it: the platform's own `Response` where there is one
+ * (code written for a browser asks whether it has been given one), this module's otherwise.
+ */
+function responseOf(answer: Extract<BridgeIncoming, { event: "response" }>): HttpResponseLike {
+  const Platform: unknown = Reflect.get(globalThis, "Response");
+  if (!isResponseConstructor(Platform) || answer.status < 200 || answer.status > 599) return new BridgeResponse(answer);
+  const headers = { ...answer.headers };
+  // JSON travels as JSON: it is text again here, and says so
+  if (answer.json !== undefined && headers["content-type"] === undefined) headers["content-type"] = "application/json";
+  const bytes = bodyBytes(answer);
+  return new Platform(NO_BODY.has(answer.status) || bytes.length === 0 ? null : bytes, {
+    status: answer.status,
+    headers,
+  });
+}
+
 interface AbortLike {
   readonly aborted: boolean;
   addEventListener(type: "abort", listener: () => void): void;
@@ -514,7 +544,7 @@ export function bridgeTransport(port: BridgePort): BridgeTransport {
         return;
       }
       waiting.set(id, (answer) => {
-        resolve(new BridgeResponse(answer));
+        resolve(responseOf(answer));
       });
       signal?.addEventListener("abort", () => {
         if (!waiting.delete(id)) return;
@@ -637,6 +667,17 @@ export interface PageHost {
   basePath?: string;
   /** Where a file the server would serve (`/plugins/hmi/entry.js`) is for this page. */
   url?(path: string): string;
+  /**
+   * The address of an empty page of this page's own origin, for a frame the page fills itself (a plugin's page
+   * that the plugin has to reach into: the Appium Inspector). A host gives one where a frame with no address
+   * (`srcdoc`) cannot load the plugin's files: an editor's webview serves them only to pages it knows.
+   */
+  emptyPage?: string;
+  /**
+   * The page is one view, alone in a window of the host (an editor's tab), with no tool window of the page's
+   * beside it: a view keeps inside itself what it would otherwise put in one (the Appium Inspector's tabs).
+   */
+  standalone?: boolean;
   /** Follows the host's theme (`{ mode, tokens }`, as `jumpstarter.host/1` carries it); returns what stops it. */
   theme?(listener: (theme: unknown) => void): () => void;
 }
