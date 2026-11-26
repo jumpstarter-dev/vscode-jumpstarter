@@ -9,6 +9,9 @@
  */
 
 import * as path from "path";
+import { Lease } from "../../types";
+import { leaseExporter, leaseRoles, leaseTarget } from "../leases/members";
+import { shortLeaseName } from "../leases/model";
 
 /** A view a plugin of Jumpstarter Web has for a kind of driver client. */
 export interface WebView {
@@ -491,4 +494,39 @@ export function linkFor(serverUrl: string, route: string): string {
 /** Whether a server that ended before it listened did so because its port was taken. */
 export function portTaken(message: string): boolean {
   return /address already in use|EADDRINUSE|Errno 98|Errno 48/i.test(message);
+}
+
+// ---------------------------------------------------------------------------
+// What a view's tab is called
+// ---------------------------------------------------------------------------
+
+/**
+ * The title of a view's tab: the view, the exporter it is a view of, and the
+ * lease, by the start of its name (`Screen: cf-phone-r6p89 · 01a2153d`). Two
+ * screens open at once are then told apart by what they show, and a tab says
+ * which lease it ends with.
+ *
+ * The exporter is the one the lease holds (of a lease of an exporter set, the
+ * exporter that was given, not the set); for a role of a lease with members,
+ * the role's exporter, else the role. `lease` is what the Leases view has of
+ * the lease, when it has it: without, the tab is named by the lease alone.
+ */
+export function viewTabTitle(viewTitle: string, leaseName: string, lease: Lease | undefined, role?: string): string {
+  let exporter = "";
+  if (role !== undefined) {
+    exporter = (lease ? leaseRoles(lease).find((entry) => entry.name === role)?.exporter : undefined) || role;
+  } else if (lease) {
+    exporter = leaseExporter(lease) || leaseTarget(lease);
+  }
+  return `${viewTitle}: ${[exporter, shortLeaseName(leaseName)].filter((part) => part.length > 0).join(" · ")}`;
+}
+
+/**
+ * The title of the tab that shows a lease's views together: what the lease is
+ * a lease of (its exporter; the template or the roles of a lease with
+ * members), and the start of its name. `cf-phone-r6p89 · 01a2153d`.
+ */
+export function leaseTabTitle(lease: Lease): string {
+  const of = (lease.members?.length ?? 0) > 0 ? leaseTarget(lease) : leaseExporter(lease) || leaseTarget(lease);
+  return [of, shortLeaseName(lease.name)].filter((part) => part.length > 0).join(" · ");
 }

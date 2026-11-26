@@ -27,8 +27,11 @@ import {
   ROLE_SESSION_SCRIPT,
   serverKey,
   tail,
+  leaseTabTitle,
+  viewTabTitle,
   viewsForDriver,
 } from "../../features/webUi/model";
+import { Lease } from "../../types";
 import { buildMessageHtml, buildPanelHtml, HOST_MESSAGE, HOST_TOKEN_SOURCES } from "../../features/webUi/panel";
 
 test("the server's address is read from its ready line, among other output", () => {
@@ -345,4 +348,68 @@ test("a panel of a role's view keeps the role, and is made again on that role's 
   assert.equal("role" in panelState("lab", "lease-1", link, "Screen"), false);
   assert.equal(parsePanelState({ ...state, role: "../etc" })?.role, undefined);
   assert.equal(parsePanelState({ ...state, role: 7 })?.role, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// What a view's tab is called
+// ---------------------------------------------------------------------------
+
+function heldLease(overrides: Partial<Lease> = {}): Lease {
+  return {
+    name: "01a2153d-c976-75a3-b8cb-c8063f6c7765",
+    namespace: "jumpstarter-lab",
+    selector: "exporterset.jumpstarter.dev/name=cf-phone",
+    exporter: "cf-phone-r6p89",
+    exporter_name: null,
+    client: "kirk",
+    duration: 1800,
+    effective_begin_time: "2026-11-26T00:25:00Z",
+    effective_end_time: null,
+    begin_time: null,
+    tags: {},
+    context: {},
+    conditions: [],
+    status: "In-Use",
+    ...overrides,
+  };
+}
+
+test("a view's tab is named by the view, the exporter the lease holds and the start of the lease's name", () => {
+  const ofSet = heldLease();
+  // (of a lease of an exporter set: the exporter that was given, which is what the screen shows)
+  assert.equal(viewTabTitle("Screen", ofSet.name, ofSet), "Screen: cf-phone-r6p89 · 01a2153d");
+  assert.equal(viewTabTitle("Appium", ofSet.name, ofSet), "Appium: cf-phone-r6p89 · 01a2153d");
+  const byName = heldLease({ name: "01a2153f-dea5-7ee6-b27e-6d0f64b37201", selector: "<none>", exporter: "ipad", exporter_name: "ipad" });
+  assert.equal(viewTabTitle("Screen", byName.name, byName), "Screen: ipad · 01a2153f");
+  // two screens open at once are told apart
+  assert.notEqual(viewTabTitle("Screen", ofSet.name, ofSet), viewTabTitle("Screen", byName.name, byName));
+  // a lease the Leases view does not have (yet): by the lease alone
+  assert.equal(viewTabTitle("Screen", byName.name, undefined), "Screen: 01a2153f");
+});
+
+test("a view of a role of a lease with members is named by the role's exporter, else by the role", () => {
+  const members = heldLease({
+    name: "lease-9m2qd",
+    selector: "",
+    exporter: "",
+    members: [
+      { name: "phone", selector: "type=phone", exporter_name: null, optional: false, allow_disabled: false, exclude_labels: [] },
+      { name: "headunit", selector: "type=head-unit", exporter_name: null, optional: false, allow_disabled: false, exclude_labels: [] },
+    ] as unknown as Lease["members"],
+    member_statuses: [
+      { name: "phone", state: "Bound", exporter: "cf-phone-r6p89", reason: null, message: null },
+    ] as unknown as Lease["member_statuses"],
+  });
+  assert.equal(viewTabTitle("Screen", members.name, members, "phone"), "Screen: cf-phone-r6p89 · lease-9m2qd");
+  // a role whose exporter is not known, and a lease the view does not have
+  assert.equal(viewTabTitle("Screen", members.name, members, "headunit"), "Screen: headunit · lease-9m2qd");
+  assert.equal(viewTabTitle("Screen", members.name, undefined, "phone"), "Screen: phone · lease-9m2qd");
+});
+
+test("the tab of a lease's views together is named by what it is a lease of and the start of its name", () => {
+  assert.equal(leaseTabTitle(heldLease()), "cf-phone-r6p89 · 01a2153d");
+  // not bound yet, by a selector that names a set: the set
+  assert.equal(leaseTabTitle(heldLease({ exporter: "" })), "cf-phone · 01a2153d");
+  // nothing to call it by but its name
+  assert.equal(leaseTabTitle(heldLease({ exporter: "", selector: "board=rpi4" })), "01a2153d");
 });

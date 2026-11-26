@@ -72,6 +72,8 @@ suite("native views", () => {
     assert.deepEqual(api.views.keys(), [`${lease}||power|power/meter`]);
     assert.deepEqual(api.webUi.panelLinks(), [], "no framed page of a server");
     assert.equal(api.webUi.serverUrl(lease), undefined, "no server was started");
+    // The tab says what it is a view of: the exporter the lease holds, and the lease.
+    assert.match(api.views.title(api.views.keys()[0]) ?? "", /^.+: bench-1 · lease-1$/);
 
     const shells = callsMatching("shell");
     assert.equal(shells.length, 1);

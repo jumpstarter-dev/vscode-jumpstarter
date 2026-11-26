@@ -338,6 +338,10 @@ export function registerWebUi(
     return pending;
   };
 
+  /** What the Leases view has of a lease, by its name: what a tab of one of its views is named from. */
+  const knownLease = (leaseName: string): Lease | undefined =>
+    leases.leases.find((lease) => lease.name === leaseName);
+
   const leaseOf = (node: unknown): LeaseRef | undefined => {
     const n = node as { kind?: string; client?: string; lease?: Lease } | undefined;
     if (n && n.kind === "lease" && n.lease && typeof n.client === "string") {
@@ -506,7 +510,7 @@ export function registerWebUi(
         ...(role ? { role } : {}),
         driverPath: primary.driverPath,
         view: primary.view,
-        title: `${primary.view.title}: ${role ?? primary.label}`,
+        title: model.viewTabTitle(primary.view.title, ref.lease.name, ref.lease, role),
       });
     }
     return found.length > 0;
@@ -548,7 +552,7 @@ export function registerWebUi(
     showPanel(
       model.buildDriverViewLink(serverUrl, primary.driverPath, primary.view, "none"),
       { client: ref.client, lease: ref.lease.name },
-      `${primary.view.title}: ${primary.label}`,
+      model.viewTabTitle(primary.view.title, ref.lease.name, ref.lease),
       primary.view.icon,
     );
     return true;
@@ -591,7 +595,7 @@ export function registerWebUi(
       await openTogether(
         server,
         { client: node.client, lease: node.leaseName, role: node.role.name },
-        `${node.role.name}: ${node.role.exporter ?? shortLeaseName(node.leaseName)}`,
+        `${node.role.name}: ${[node.role.exporter, shortLeaseName(node.leaseName)].filter(Boolean).join(" · ")}`,
         false,
       );
     } catch (err) {
@@ -627,7 +631,7 @@ export function registerWebUi(
         await openTogether(
           server,
           { client: ref.client, lease: ref.lease.name },
-          leaseTarget(ref.lease) || shortLeaseName(ref.lease.name),
+          model.leaseTabTitle(ref.lease),
           true,
         );
         return;
@@ -646,7 +650,7 @@ export function registerWebUi(
       showPanel(
         model.buildWebUiLink(server.url, { tools, chrome: "none" }),
         { client: ref.client, lease: ref.lease.name },
-        leaseTarget(ref.lease) || shortLeaseName(ref.lease.name),
+        model.leaseTabTitle(ref.lease),
         "display",
       );
     } catch (err) {
@@ -687,7 +691,7 @@ export function registerWebUi(
           ...(n.role ? { role: n.role } : {}),
           driverPath: n.descriptor.driverPath,
           view,
-          title: `${view.title}: ${n.role ? `${n.role} ` : ""}${n.descriptor.label}`,
+          title: model.viewTabTitle(view.title, n.leaseName, knownLease(n.leaseName), n.role),
         });
         return;
       }
@@ -700,7 +704,7 @@ export function registerWebUi(
       showPanel(
         model.buildDriverViewLink(server.url, n.descriptor.driverPath, view, "none"),
         { client: n.client, lease: n.leaseName, ...(n.role ? { role: n.role } : {}) },
-        `${view.title}: ${n.role ? `${n.role} ` : ""}${n.descriptor.label}`,
+        model.viewTabTitle(view.title, n.leaseName, knownLease(n.leaseName), n.role),
         view.icon,
       );
     } catch (err) {

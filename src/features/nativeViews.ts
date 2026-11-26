@@ -49,6 +49,8 @@ export interface NativeViews {
   keys(): string[];
   /** The document of an open view. */
   html(key: string): string | undefined;
+  /** The title of a view's tab, for the tests. */
+  title(key: string): string | undefined;
   closeAll(): void;
   /**
    * What an open view's page reported of itself (it drew, it shows a picture, an error, something its policy
@@ -283,6 +285,7 @@ export function registerNativeViews(
     open,
     keys: () => [...panels.keys()],
     html: (key) => panels.get(key)?.webview.html,
+    title: (key) => panels.get(key)?.title,
     closeAll: () => {
       for (const panel of [...panels.values()]) {
         panel.dispose();
