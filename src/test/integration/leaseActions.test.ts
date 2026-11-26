@@ -201,6 +201,9 @@ suite("lease actions", () => {
       restore();
     }
     expectCall("delete", "leases", "lease-1");
+    // (the fake CLI has the lease as ended from here on: the tests after this have it again)
+    clearCliCalls();
+    await api.refreshAll();
   });
 
   test("showing ended leases asks the controller for them", async () => {

@@ -13,7 +13,7 @@
  */
 
 import * as assert from "assert";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import * as path from "path";
 import * as vscode from "vscode";
@@ -95,6 +95,9 @@ export function cliCalls(): string[][] {
 export function clearCliCalls(): void {
   if (logFile) {
     writeFileSync(logFile, "");
+    // (and the lease the fake CLI remembers having made: a test starts with the leases it is given)
+    rmSync(`${logFile}.created-lease.json`, { force: true });
+    rmSync(`${logFile}.ended-lease.json`, { force: true });
   }
 }
 

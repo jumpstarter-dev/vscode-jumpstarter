@@ -253,11 +253,13 @@ test("buildLeasePickEntries describes status, exporter and remaining time", () =
     lease({
       name: "running",
       status: "In-Use",
+      exporter: "rpi4-01",
       exporter_name: "rpi4-01",
       duration: 1800,
       effective_begin_time: "2026-08-29T10:00:00Z",
     }),
-    lease({ name: "queued", status: "Waiting", exporter_name: "", selector: "board=rpi4" }),
+    // (a lease that waits holds no exporter yet)
+    lease({ name: "queued", status: "Waiting", exporter: "", exporter_name: "", selector: "board=rpi4" }),
   ];
   const entries = buildLeasePickEntries(leases, undefined, now);
   const running = entries.find((e) => e.leaseName === "running");

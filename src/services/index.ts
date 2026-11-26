@@ -26,8 +26,15 @@ export { ConfigWatcher } from "./configWatcher";
 export { StatusBarManager } from "./statusBar";
 export { Poller, configuredPollIntervalSeconds } from "./poller";
 export type { PollerOptions } from "./poller";
-export { PendingLeaseStore, describePending } from "./pendingLeases";
-export type { PendingLease } from "./pendingLeases";
+export {
+  PendingLeaseStore,
+  describePending,
+  describeReleasing,
+  leasesStillPending,
+  waitForLease,
+  waitForRelease,
+} from "./pendingLeases";
+export type { LeaseWaitOutcome, PendingLease } from "./pendingLeases";
 
 export interface Services {
   /** The CLI bridge — every jmp call goes through this. */

@@ -97,14 +97,40 @@ export function describeDegraded(lease: Lease): string {
   return `Degraded: ${names.join(", ")} lost ${lost.length === 1 ? "its exporter" : "their exporters"}`;
 }
 
+/** The label a controller puts on every exporter an exporter set makes: a selector on it asks for "any of the set". */
+const EXPORTER_SET_NAME_LABEL = "exporterset.jumpstarter.dev/name";
+
+/** The exporter set a selector asks for (`exporterset.jumpstarter.dev/name=cf-phone`), if it names one. */
+export function exporterSetOf(selector: string | null | undefined): string | undefined {
+  for (const term of (selector ?? "").split(",")) {
+    const match = /^\s*([^=!\s]+)\s*==?\s*(\S+)\s*$/.exec(term);
+    if (match && match[1] === EXPORTER_SET_NAME_LABEL) {
+      return match[2];
+    }
+  }
+  return undefined;
+}
+
+/** The exporter a lease of one holds: the one it is bound to, else the one it asked for by name. */
+export function leaseExporter(lease: Lease): string {
+  // (`exporter` can be a reference with a path: its last part is the name)
+  const bound = (lease.exporter || "").split("/").filter((part) => part.length > 0).pop();
+  return bound || lease.exporter_name || "";
+}
+
 /**
  * What a lease is a lease *of*, wherever one line has to say it: the exporter
- * of a lease of one, the template of a lease with members, else its roles.
- * Empty when the lease has neither (not bound yet, by a selector).
+ * set of a lease that asked for any exporter of a set, else the exporter of a
+ * lease of one (the one it holds, or asked for by name), the template of a
+ * lease with members, else its roles. Empty when the lease has none of these
+ * (not bound yet, by a selector that names no set).
+ *
+ * `exporter_name` alone is the exporter that was *asked for* by name: a lease
+ * by selector has none, though it holds one.
  */
 export function leaseTarget(lease: Lease): string {
   if (!isMemberLease(lease)) {
-    return lease.exporter_name || "";
+    return exporterSetOf(lease.selector) ?? leaseExporter(lease);
   }
   return templateName(lease) ?? leaseRoles(lease).map((role) => role.name).join(", ");
 }

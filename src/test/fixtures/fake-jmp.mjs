@@ -19,7 +19,7 @@
  * loudly instead of silently passing.
  */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -49,6 +49,38 @@ function configFile(kind, alias, body) {
 }
 
 const argv = process.argv.slice(2);
+
+/**
+ * The lease `jmp create lease` made, as the controller has it: the command
+ * answers as soon as the lease exists, and a listing has it from then on,
+ * waiting for $JMP_FAKE_LEASE_WAITS milliseconds (none by default) and then
+ * held. It is remembered beside the call log, for a few seconds: long enough
+ * for the extension to see it held, and gone before the next test lists.
+ */
+const CREATED_LEASE = process.env.JMP_FAKE_LOG ? `${process.env.JMP_FAKE_LOG}.created-lease.json` : undefined;
+const CREATED_LEASE_KEPT_MS = 4000;
+
+function createdLeases() {
+  if (!CREATED_LEASE || !existsSync(CREATED_LEASE)) {
+    return [];
+  }
+  const made = JSON.parse(readFileSync(CREATED_LEASE, "utf8"));
+  const age = Date.now() - made.at;
+  const waits = Number(process.env.JMP_FAKE_LEASE_WAITS ?? 0);
+  if (age > waits + CREATED_LEASE_KEPT_MS) {
+    rmSync(CREATED_LEASE, { force: true });
+    return [];
+  }
+  const held = age >= waits;
+  return [
+    {
+      ...made.lease,
+      exporter: held ? made.lease.exporter : "",
+      effective_begin_time: held ? new Date(made.at + waits).toISOString() : null,
+      status: held ? "In-Use" : "Waiting",
+    },
+  ];
+}
 
 if (process.env.JMP_FAKE_LOG) {
   appendFileSync(process.env.JMP_FAKE_LOG, `${JSON.stringify(argv)}\n`);
@@ -189,6 +221,29 @@ const adminMeta = (name, labels) => ({
   uid: `uid-${name}`,
 });
 
+/**
+ * The lease `jmp delete leases` ended, as the controller has it: the command
+ * answers at once, and a listing still has the lease, held, for
+ * $JMP_FAKE_RELEASE_TAKES milliseconds (none by default) and then no more. It
+ * is remembered beside the call log for a few seconds, like the lease that was
+ * made: after that the listing is the one every test starts with.
+ */
+const ENDED_LEASE = process.env.JMP_FAKE_LOG ? `${process.env.JMP_FAKE_LOG}.ended-lease.json` : undefined;
+
+function stillListed(leases) {
+  if (!ENDED_LEASE || !existsSync(ENDED_LEASE)) {
+    return leases;
+  }
+  const ended = JSON.parse(readFileSync(ENDED_LEASE, "utf8"));
+  const age = Date.now() - ended.at;
+  const takes = Number(process.env.JMP_FAKE_RELEASE_TAKES ?? 0);
+  if (age > takes + CREATED_LEASE_KEPT_MS) {
+    rmSync(ENDED_LEASE, { force: true });
+    return leases;
+  }
+  return age >= takes ? leases.filter((entry) => entry.name !== ended.name) : leases;
+}
+
 const responses = [
   // `jmp mcp --help` answers where jumpstarter-mcp is installed beside the CLI
   [() => startsWith("mcp", "--help"), { usage: "jmp mcp [OPTIONS] COMMAND [ARGS]..." }],
@@ -301,7 +356,13 @@ const responses = [
   // the suites that are about that one lease do not have to tell them apart.
   [
     () => startsWith("get", "leases"),
-    { leases: [lease, ...(process.env.JMP_FAKE_MEMBERS ? fixture("leases.json").leases : [])] },
+    {
+      leases: stillListed([
+        lease,
+        ...(process.env.JMP_FAKE_MEMBERS ? fixture("leases.json").leases : []),
+        ...createdLeases(),
+      ]),
+    },
   ],
   [() => startsWith("get", "lease-templates"), fixture("lease-templates.json")],
   [() => startsWith("describe", "lease-template"), fixture("lease-template.json")],
@@ -440,11 +501,26 @@ function respond() {
 
   // Creating a lease answers with the new lease's name.
   if (startsWith("create", "lease")) {
+    if (CREATED_LEASE) {
+      const named = valueOf("-n");
+      const made = {
+        ...lease,
+        name: "lease-new",
+        selector: valueOf("-l") ?? "<none>",
+        exporter: named ?? "bench-2",
+        exporter_name: named ?? null,
+        begin_time: null,
+      };
+      writeFileSync(CREATED_LEASE, JSON.stringify({ at: Date.now(), lease: made }));
+    }
     process.stdout.write("lease-new\n");
     return true;
   }
 
   if (startsWith("delete", "leases") || startsWith("update", "lease")) {
+    if (startsWith("delete", "leases") && ENDED_LEASE) {
+      writeFileSync(ENDED_LEASE, JSON.stringify({ at: Date.now(), name: argv[2] }));
+    }
     process.stdout.write("ok\n");
     return true;
   }

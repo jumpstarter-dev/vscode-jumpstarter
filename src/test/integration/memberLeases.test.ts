@@ -118,7 +118,8 @@ suite("leases with members", () => {
       "lease-9m2qd | ivi · In-Use",
       "lease-degraded | phone, headunit · Degraded",
       "lease-omitted | ivi · In-Use",
-      "lease-scalar | In-Use",
+      // (by a selector: it is named by the exporter it holds, which it did not ask for by name)
+      "lease-scalar | bench-1 · In-Use",
       "lease-pending | phone, headunit · Waiting",
     ]);
     // (the first lease has a start time, so its row also counts down: only its beginning is fixed)
@@ -246,6 +247,9 @@ suite("leases with members", () => {
     }
     assert.equal(asked, "End lease 'lease-9m2qd' from template 'ivi' (roles phone, headunit)?");
     expectCall("delete", "leases", "lease-9m2qd");
+    // (the fake CLI has the lease as ended from here on: the tests after this have it again)
+    clearCliCalls();
+    await api.refreshAll();
 
     // A degraded lease is still held: it can be entered and ended like any lease in use.
     const degraded = await leaseNode("lease-degraded");

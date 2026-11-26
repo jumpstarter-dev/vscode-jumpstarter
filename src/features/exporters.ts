@@ -15,6 +15,7 @@ import { JmpError, Services, Poller } from "../services";
 import { Exporter, ExporterConfigRef } from "../types";
 import { isValidAddress, redactSecretArgs, shellQuote } from "../services/jmpProtocol";
 import { showDetails } from "./details";
+import { acquireLease } from "./leases/acquire";
 import { resolveIcon } from "./icons";
 import { openConfigForEditing } from "./openConfig";
 import {
@@ -651,40 +652,27 @@ export function registerExporters(
     duration: string,
   ): Promise<void> => {
     const target = opts.label ?? opts.exporterName ?? `selector '${opts.selector}'`;
-    // Show the request in the lease views for as long as it is outstanding:
-    // the lease does not exist yet, so nothing else would show it.
-    const pending = services.pendingLeases.begin(
-      client,
-      opts.label ?? opts.exporterName ?? opts.selector ?? "an exporter",
-    );
-    try {
-      // Progress shows in the Leases view: that is where the result appears,
-      // and acquiring can take a while when a pool has to provision first.
-      const leaseName = await vscode.window.withProgress(
-        {
-          location: { viewId: "jumpstarter.leases" },
-          title: `Acquiring lease on ${target}…`,
-        },
-        () =>
+    // The request is shown in the lease views until the lease is held: it is
+    // made at once, and bound when an exporter is there (a pool may have to
+    // provision one first).
+    await acquireLease(
+      services,
+      {
+        client,
+        label: opts.label ?? opts.exporterName ?? opts.selector ?? "an exporter",
+        target: `on ${target}`,
+        create: () =>
           services.jmp.createLease(client, {
             exporterName: opts.exporterName,
             selector: opts.selector,
             duration,
           }),
-      );
-      void vscode.window.showInformationMessage(
-        `Jumpstarter: lease '${leaseName}' created on ${target}.`,
-      );
-      // Leasing changes both views: this exporter is now held, and a pool may
-      // have recycled or provisioned behind it.
-      services.notifyLeasesChanged();
-      void poller.refreshNow();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      void vscode.window.showErrorMessage(`Jumpstarter: failed to create lease: ${message}`);
-    } finally {
-      services.pendingLeases.end(pending);
-    }
+      },
+      (message) => void vscode.window.showErrorMessage(`Jumpstarter: failed to create lease: ${message}`),
+    );
+    // Leasing changes this view too: the exporter is now held, and a pool may
+    // have recycled or provisioned behind it.
+    void poller.refreshNow();
   };
 
   context.subscriptions.push(

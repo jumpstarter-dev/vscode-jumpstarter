@@ -15,6 +15,8 @@ import {
   isMemberLease,
   leaseForwards,
   leaseRoles,
+  exporterSetOf,
+  leaseExporter,
   leaseTarget,
   portDirections,
 } from "../../features/leases/members";
@@ -209,7 +211,8 @@ test("a forward's row: endpoints, state and the cause of one that does not opera
 test("a lease with members is named by its template, else by its roles", () => {
   assert.equal(leaseTarget(byName("lease-9m2qd")), "ivi");
   assert.equal(leaseTarget(byName("lease-degraded")), "phone, headunit");
-  assert.equal(leaseTarget(byName("lease-scalar")), "");
+  // a lease by selector holds an exporter it did not ask for by name: that is what it is a lease of
+  assert.equal(leaseTarget(byName("lease-scalar")), "bench-1");
   assert.equal(describeLeaseHolding(byName("lease-9m2qd")), " from template 'ivi' (roles phone, headunit)");
   assert.equal(describeLeaseHolding(byName("lease-degraded")), " with roles phone, headunit");
   assert.equal(describeLeaseHolding(byName("lease-scalar")), "");
@@ -314,4 +317,30 @@ test("buildDriverNodes: a role's drivers are a lease's drivers, with commands th
   assert.equal(scalar[0].role, undefined);
   assert.equal(scalar[0].commands[2].label, "j power on");
   assert.deepEqual(buildCommandArgs(scalar[0].commands[2], new Map()), ["power", "on"]);
+});
+
+test("a lease of an exporter set is named by the set, and its tooltip says which exporter it holds", () => {
+  const scalar = byName("lease-scalar");
+  const ofSet = { ...scalar, selector: "exporterset.jumpstarter.dev/name=cf-phone", exporter: "cf-phone-r6p89" };
+  assert.equal(exporterSetOf(ofSet.selector), "cf-phone");
+  assert.equal(leaseTarget(ofSet), "cf-phone");
+  assert.equal(leaseExporter(ofSet), "cf-phone-r6p89");
+  // among other terms, and written with ==
+  assert.equal(exporterSetOf("lab=east, exporterset.jumpstarter.dev/name==cf-headunit"), "cf-headunit");
+  // a selector that names no set, another label of a set, and none at all
+  assert.equal(exporterSetOf("board=rpi4"), undefined);
+  assert.equal(exporterSetOf("exporterset.jumpstarter.dev/class=phone"), undefined);
+  assert.equal(exporterSetOf("exporterset.jumpstarter.dev/name!=cf-phone"), undefined);
+  assert.equal(exporterSetOf("<none>"), undefined);
+  assert.equal(exporterSetOf(null), undefined);
+});
+
+test("a lease of one exporter is named by the exporter it holds, else the one it asked for", () => {
+  const scalar = byName("lease-scalar");
+  assert.equal(leaseExporter({ ...scalar, exporter: "exporters/bench-1" }), "bench-1");
+  assert.equal(leaseTarget({ ...scalar, selector: "<none>", exporter: "ipad", exporter_name: "ipad" }), "ipad");
+  // asked for by name and not bound yet
+  assert.equal(leaseTarget({ ...scalar, selector: "", exporter: "", exporter_name: "ipad" }), "ipad");
+  // by a selector that names no set, and not bound yet: nothing to call it
+  assert.equal(leaseTarget({ ...scalar, exporter: "", exporter_name: null }), "");
 });

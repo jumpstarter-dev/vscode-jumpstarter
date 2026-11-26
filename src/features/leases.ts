@@ -17,7 +17,8 @@
 
 import * as vscode from "vscode";
 import * as path from "path";
-import { Services, JmpError } from "../services";
+import { Services, JmpError, waitForRelease } from "../services";
+import { RELEASE_WAIT_MS } from "../services/pendingLeasesModel";
 import { shellQuote } from "../services/jmpProtocol";
 import { CliParam, Lease } from "../types";
 import { showDetails } from "./details";
@@ -490,11 +491,40 @@ export function registerLeases(
       if (!(await checkAuth(leaseNode.client))) {
         return;
       }
+      if (provider.isReleasing(lease.name)) {
+        return; // (asked twice: the first is still going)
+      }
+      // The row says the lease is going from now until it is released, the
+      // controller refuses, or the time allowed is over, whichever comes
+      // first: `jmp delete leases` answers before the exporter is given back.
+      provider.markReleasing(lease.name);
       try {
-        await jmp.deleteLease(leaseNode.client, lease.name);
-        void poller.refreshNow();
-      } catch (err) {
-        showJmpError("Failed to end lease", err);
+        await vscode.window.withProgress(
+          { location: { viewId: "jumpstarter.leases" }, title: `Ending lease '${lease.name}'…` },
+          async () => {
+            try {
+              await jmp.deleteLease(leaseNode.client, lease.name);
+            } catch (err) {
+              showJmpError("Failed to end lease", err);
+              return;
+            }
+            const outcome = await waitForRelease(lease.name, {
+              list: () => jmp.getLeases(leaseNode.client, false),
+            });
+            if (outcome === "timeout") {
+              void vscode.window.showWarningMessage(
+                `Jumpstarter: lease '${lease.name}' is still held ${Math.round(RELEASE_WAIT_MS / 1000)} seconds after it was ended.`,
+              );
+            }
+            // The view reads the listing before the row stops saying "releasing":
+            // it is then gone, not back as it was for a moment.
+            await poller.refreshNow();
+          },
+        );
+      } finally {
+        provider.released(lease.name);
+        // (the exporter it held is free again: the other views read too)
+        services.notifyLeasesChanged();
       }
     }),
 

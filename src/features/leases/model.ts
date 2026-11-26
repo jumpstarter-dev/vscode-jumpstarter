@@ -17,8 +17,10 @@ import {
 } from "../../types";
 import {
   DirectionLookup,
+  exporterSetOf,
   isDegraded,
   isMemberLease,
+  leaseExporter,
   leaseTarget,
   memberTooltipLines,
 } from "./members";
@@ -185,6 +187,8 @@ export function leaseStatusIcon(status: LeaseStatus): { icon: string; color: str
   }
 }
 
+export { leaseTarget };
+
 export function buildLeaseRow(
   lease: Lease,
   now: Date = new Date(),
@@ -212,7 +216,10 @@ export function buildLeaseRow(
     lease.name,
     ...(members
       ? memberTooltipLines(lease, direction)
-      : [`Exporter: ${target || lease.selector || "(selector)"}`]),
+      : [
+          ...(exporterSetOf(lease.selector) ? [`Exporter set: ${exporterSetOf(lease.selector)}`] : []),
+          `Exporter: ${leaseExporter(lease) || lease.selector || "(selector)"}`,
+        ]),
     `Status: ${status}`,
     `Duration: ${formatSpan(lease.duration)}`,
   ];
@@ -250,6 +257,23 @@ export function buildLeaseRow(
   };
 }
 
+/**
+ * The row of a lease that was ended and is not released yet: what it is a
+ * lease of, that it is going, and for how long it has been. It takes no action
+ * and opens into nothing: there is nothing to do with a lease on its way out.
+ */
+export function releasingLeaseRow(row: LeaseRowDescriptor, target: string, releasing: string): LeaseRowDescriptor {
+  return {
+    ...row,
+    description: [target, releasing].filter((part) => part.length > 0).join(" · "),
+    tooltip: `${row.tooltip}\nEnding: waiting for the controller to release it.`,
+    contextValue: "jumpstarterLeaseReleasing",
+    icon: "loading~spin",
+    iconColor: "charts.blue",
+    expandable: false,
+  };
+}
+
 const STATUS_RANK: Record<LeaseStatus, number> = {
   "In-Use": 0,
   Degraded: 0,
@@ -258,6 +282,59 @@ const STATUS_RANK: Record<LeaseStatus, number> = {
   Ended: 3,
   Unknown: 4,
 };
+
+/** What the order needs of a request for a lease (see `orderLeaseRows`). */
+export interface RequestedLease {
+  /** The lease the controller made for it, once it has said so. */
+  leaseName?: string;
+  startedAt: number;
+}
+
+/**
+ * The rows of the view, in order: the leases, and the requests for a lease
+ * among them where the lease will be once it is held, so that a row does not
+ * move when its lease is acquired. A request is ranked as a lease in use and
+ * ordered by its lease's name; one whose lease is not made yet comes after
+ * the leases in use (a new lease's name is the latest), oldest request first.
+ *
+ * The same holds on the way out: a lease that was ended and is not released
+ * yet (`releasing`) stays where it was, among the leases in use, whatever a
+ * listing says of it meanwhile, until its row goes.
+ */
+export function orderLeaseRows<L extends Lease, R extends RequestedLease>(
+  leases: readonly L[],
+  requests: readonly R[],
+  releasing?: { has(leaseName: string): boolean },
+): ({ lease: L } | { request: R })[] {
+  const inUse = STATUS_RANK["In-Use"];
+  const rows: { rank: number; named: boolean; name: string; at: number; row: { lease: L } | { request: R } }[] = [
+    ...leases.map((lease) => ({
+      rank: releasing?.has(lease.name) ? inUse : (STATUS_RANK[lease.status] ?? 5),
+      named: true,
+      name: lease.name,
+      at: 0,
+      row: { lease },
+    })),
+    ...requests.map((request) => ({
+      rank: inUse,
+      named: request.leaseName !== undefined,
+      name: request.leaseName ?? "",
+      at: request.startedAt,
+      row: { request },
+    })),
+  ];
+  return rows
+    .sort((a, b) => {
+      if (a.rank !== b.rank) {
+        return a.rank - b.rank;
+      }
+      if (a.named !== b.named) {
+        return a.named ? -1 : 1;
+      }
+      return a.named ? a.name.localeCompare(b.name) : a.at - b.at;
+    })
+    .map((entry) => entry.row);
+}
 
 /** Active leases first, then by name for a stable order. */
 export function sortLeases(leases: readonly Lease[]): Lease[] {

@@ -4,7 +4,7 @@
 
 import * as assert from "assert";
 import * as vscode from "vscode";
-import { activateWithFakeCli, clearCliCalls, expectCall, treeLabels, waitFor } from "./harness";
+import { activateWithFakeCli, clearCliCalls, expectCall, iconIdOf, stubUi, treeLabels, waitFor } from "./harness";
 import type { JumpstarterApi } from "../../extension";
 
 suite("leases", () => {
@@ -73,6 +73,75 @@ suite("leases", () => {
     await api.services.jmp.deleteLease("fake", "lease-1");
     const call = expectCall("delete", "leases", "lease-1");
     assert.deepEqual(call.slice(3), ["--client", "fake"]);
+    // (the fake CLI has the lease as ended from here on: the next test starts with the leases it is given)
+    clearCliCalls();
+  });
+
+  test("a lease that is being ended is its own row, releasing, until it is gone", async function () {
+    this.timeout(30_000);
+    clearCliCalls();
+    await api.refreshAll();
+    // The controller takes the request at once and gives the exporter back three seconds later.
+    process.env.JMP_FAKE_RELEASE_TAKES = "3000";
+    const restore = stubUi({ messages: ["End Lease"] });
+    const leaseRows = async (): Promise<{ row: string; context: string; icon: string | undefined }[]> => {
+      const rows = [];
+      for (const node of (await api.trees.leases.getChildren()) ?? []) {
+        const item = await api.trees.leases.getTreeItem(node);
+        const label = typeof item.label === "string" ? item.label : (item.label?.label ?? "");
+        rows.push({
+          row: `${label} | ${String(item.description ?? "")}`,
+          context: String(item.contextValue ?? ""),
+          icon: iconIdOf(item),
+        });
+      }
+      return rows;
+    };
+    const seen: Awaited<ReturnType<typeof leaseRows>>[] = [];
+    let place = -1;
+    try {
+      const node = ((await api.trees.leases.getChildren()) ?? []).find(
+        (candidate) => (candidate as { lease?: { name?: string } }).lease?.name === "lease-1",
+      );
+      assert.ok(node, "the lease is listed before it is ended");
+      place = (await leaseRows()).findIndex((entry) => /^lease-1 \|/.test(entry.row));
+      let done = false;
+      const ending = Promise.resolve(vscode.commands.executeCommand("jumpstarter.leases.end", node)).finally(() => {
+        done = true;
+      });
+      while (!done) {
+        seen.push(await leaseRows());
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+      await ending;
+      // Once it is released the row is gone: it does not come back as it was for a moment.
+      const after = await leaseRows();
+      assert.ok(!after.some((entry) => /^lease-1 \|/.test(entry.row)), JSON.stringify(after));
+    } finally {
+      restore();
+      delete process.env.JMP_FAKE_RELEASE_TAKES;
+    }
+    expectCall("delete", "leases", "lease-1");
+    // From the confirmation until the lease is gone: its row, saying it is going, with a spinner and no action.
+    const first = seen.findIndex((rows) => rows.some((entry) => /releasing…/.test(entry.row)));
+    assert.ok(first >= 0, "the row says the lease is being released");
+    const during = seen.slice(first);
+    assert.ok(during.length >= 10, `shown while the controller releases it (${during.length} readings)`);
+    for (const rows of during) {
+      const mine = rows.filter((entry) => /^lease-1 \|/.test(entry.row));
+      assert.equal(mine.length, 1, `one row for the lease at every reading: ${JSON.stringify(rows)}`);
+      assert.match(mine[0].row, /^lease-1 \| bench-1 · releasing…/);
+      assert.equal(mine[0].context, "jumpstarterLeaseReleasing");
+      assert.equal(mine[0].icon, "loading~spin");
+      // ... in the place it had before it was ended
+      assert.equal(rows.indexOf(mine[0]), place, `the row keeps its place: ${JSON.stringify(rows)}`);
+    }
+    // (the fake CLI forgets what it ended: the suites after this one have the lease again)
+    clearCliCalls();
+    await api.refreshAll();
+    await waitFor("the lease to be listed again", async () =>
+      (await leaseRows()).some((entry) => /^lease-1 \|/.test(entry.row)),
+    );
   });
 
   test("a shell command is built without running it", async () => {

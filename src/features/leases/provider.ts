@@ -14,7 +14,7 @@
 
 import * as vscode from "vscode";
 import { ExporterPort, Lease, LeaseDriverTree, isLeaseUsable } from "../../types";
-import { describePending, JmpService, JmpError, PendingLease, PendingLeaseStore } from "../../services";
+import { describePending, describeReleasing, leasesStillPending, JmpService, JmpError, PendingLease, PendingLeaseStore } from "../../services";
 import type { RoleDrivers } from "../../services/leaseProtocol";
 import * as model from "./model";
 import * as members from "./members";
@@ -118,10 +118,30 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
   /** Whether a driver client class has a view in Jumpstarter Web; see setWebViewLookup. */
   private hasWebView: (driverClass: string, driverPath: readonly string[]) => boolean = () => false;
 
+  /** The leases that were ended and are not released yet, with when each was ended. */
+  private readonly releasing = new Map<string, number>();
+
   constructor(
     private readonly jmp: JmpService,
     private readonly pendingLeases?: PendingLeaseStore,
   ) {}
+
+  /** A lease was ended: its row says so until `released`. Re-renders. */
+  markReleasing(leaseName: string, now = Date.now()): void {
+    this.releasing.set(leaseName, now);
+    this.changeEmitter.fire(undefined);
+  }
+
+  /** The end of a lease is over, however it went: its row is as the listing has it (or gone). Re-renders. */
+  released(leaseName: string): void {
+    if (this.releasing.delete(leaseName)) {
+      this.changeEmitter.fire(undefined);
+    }
+  }
+
+  isReleasing(leaseName: string): boolean {
+    return this.releasing.has(leaseName);
+  }
 
   /**
    * Tell the tree which driver clients have a view of their own in
@@ -242,8 +262,11 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
   /** True while any lease in use with a begin time is displayed. */
   hasTickingLeases(): boolean {
     return (
-      this.state.kind === "data" &&
-      this.state.leases.some((l) => isLeaseUsable(l.status) && l.effective_begin_time !== null)
+      // (a lease on its way in or out counts the seconds it has taken)
+      this.releasing.size > 0 ||
+      (this.pendingLeases?.all().length ?? 0) > 0 ||
+      (this.state.kind === "data" &&
+        this.state.leases.some((l) => isLeaseUsable(l.status) && l.effective_begin_time !== null))
     );
   }
 
@@ -421,24 +444,22 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
         ];
       case "data": {
         const { client, leases } = this.state;
-        // Requests still in flight sit at the top: they are the newest thing
-        // that happened, and they are what the user is waiting on.
-        const pending: LeaseTreeNode[] = (this.pendingLeases?.forClient(client) ?? []).map(
-          (entry) => ({ kind: "pending", pending: entry }),
-        );
-        if (leases.length === 0) {
-          return pending.length > 0
-            ? pending
-            : [{ kind: "message", text: "No leases", icon: "info" }];
+        // A request for a lease is a row among the leases, where its lease
+        // will be once it is held: the row does not move when it is acquired.
+        const requests = this.pendingLeases?.forClient(client) ?? [];
+        // A lease that was made and is not held yet is its request's row, not
+        // a second one that comes and goes.
+        const requested = leasesStillPending(requests, client);
+        const shown = leases.filter((lease) => !requested.has(lease.name));
+        if (shown.length === 0 && requests.length === 0) {
+          return [{ kind: "message", text: "No leases", icon: "info" }];
         }
-        return [
-          ...pending,
-          ...model.sortLeases(leases).map((lease): LeaseTreeNode => ({
-            kind: "lease",
-            client,
-            lease,
-          })),
-        ];
+        return model.orderLeaseRows(shown, requests, this.releasing).map(
+          (row): LeaseTreeNode =>
+            "lease" in row
+              ? { kind: "lease", client, lease: row.lease }
+              : { kind: "pending", pending: row.request },
+        );
       }
     }
   }
@@ -532,7 +553,12 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
   }
 
   private leaseItem(node: LeaseNode): vscode.TreeItem {
-    const row = model.buildLeaseRow(node.lease, new Date(), this.directionsOf(node.lease));
+    const built = model.buildLeaseRow(node.lease, new Date(), this.directionsOf(node.lease));
+    const endedAt = this.releasing.get(node.lease.name);
+    const row =
+      endedAt === undefined
+        ? built
+        : model.releasingLeaseRow(built, model.leaseTarget(node.lease), describeReleasing(endedAt));
     const item = new vscode.TreeItem(
       row.label,
       row.expandable
@@ -566,9 +592,17 @@ export class LeasesTreeProvider implements vscode.TreeDataProvider<LeaseTreeNode
   }
 
   private pendingItem(node: PendingLeaseNode): vscode.TreeItem {
-    const item = new vscode.TreeItem(node.pending.label, vscode.TreeItemCollapsibleState.None);
+    // Named like the lease it becomes, as soon as the controller has made it:
+    // the lease's name, then what it is a lease of.
+    const made = node.pending.leaseName;
+    const item = new vscode.TreeItem(
+      made ? model.shortLeaseName(made) : node.pending.label,
+      vscode.TreeItemCollapsibleState.None,
+    );
     item.id = `jumpstarter.lease/${node.pending.id}`;
-    item.description = describePending(node.pending);
+    item.description = made
+      ? `${node.pending.label} · ${describePending(node.pending)}`
+      : describePending(node.pending);
     item.tooltip = new vscode.MarkdownString(
       [
         `**${node.pending.label}**`,

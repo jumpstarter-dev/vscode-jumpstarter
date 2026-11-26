@@ -21,7 +21,9 @@ import {
   isValidDuration,
   isVscodeCreated,
   optionFlag,
+  orderLeaseRows,
   promptableParams,
+  releasingLeaseRow,
   shortLeaseName,
   sortLeases,
   tailOfPath,
@@ -478,4 +480,50 @@ test("buildCommandArgs: skipped and empty values are left out", () => {
 
 test("buildCommandArgs: a command with no params is just its path", () => {
   assert.deepEqual(buildCommandArgs(makeCommand([]), new Map()), ["net", "forward-tcp"]);
+});
+
+test("a lease that was ended is a row that says it is going, with no action and nothing to open", () => {
+  const lease = makeLease({ status: "In-Use", effective_begin_time: "2026-08-29T10:00:00Z" });
+  const row = buildLeaseRow(lease, new Date("2026-08-29T10:10:00Z"));
+  const going = releasingLeaseRow(row, "dut-1", "releasing… 3s");
+  assert.equal(going.id, row.id); // the same row, not a second one
+  assert.equal(going.label, row.label);
+  assert.equal(going.description, "dut-1 · releasing… 3s");
+  assert.equal(going.icon, "loading~spin");
+  assert.equal(going.contextValue, "jumpstarterLeaseReleasing");
+  assert.equal(going.expandable, false);
+  assert.ok(going.tooltip.startsWith(row.tooltip));
+  // a lease with nothing to call it by says only that it is going
+  assert.equal(releasingLeaseRow(row, "", "releasing…").description, "releasing…");
+});
+
+test("a request for a lease is a row where its lease will be, so that it does not move when acquired", () => {
+  const lease = (name: string, status: Lease["status"]): Lease => makeLease({ name, status });
+  const leases = [lease("lease-b", "In-Use"), lease("lease-old", "Expired"), lease("lease-a", "In-Use"), lease("lease-w", "Waiting")];
+  const names = (rows: ReturnType<typeof orderLeaseRows<Lease, { leaseName?: string; startedAt: number }>>) =>
+    rows.map((row) => ("lease" in row ? row.lease.name : `request:${row.request.leaseName ?? row.request.startedAt}`));
+
+  // not made yet: after the leases in use (a new lease's name is the latest), before the ones that wait or ended
+  assert.deepEqual(names(orderLeaseRows(leases, [{ startedAt: 2 }, { startedAt: 1 }])), [
+    "lease-a", "lease-b", "request:1", "request:2", "lease-w", "lease-old",
+  ]);
+  // made: among the leases in use, by its lease's name
+  const during = names(orderLeaseRows(leases, [{ leaseName: "lease-ab", startedAt: 1 }]));
+  assert.deepEqual(during, ["lease-a", "request:lease-ab", "lease-b", "lease-w", "lease-old"]);
+  // ... which is where the lease is once it is held
+  const after = names(orderLeaseRows([...leases, lease("lease-ab", "In-Use")], []));
+  assert.equal(after.indexOf("lease-ab"), during.indexOf("request:lease-ab"));
+  assert.deepEqual(names(orderLeaseRows([], [{ startedAt: 1 }])), ["request:1"]);
+});
+
+test("a lease that is being released keeps its place, whatever a listing says of it meanwhile", () => {
+  const lease = (name: string, status: Lease["status"]): Lease => makeLease({ name, status });
+  const names = (leases: Lease[], releasing?: Set<string>) =>
+    orderLeaseRows(leases, [], releasing).map((row) => ("lease" in row ? row.lease.name : "request"));
+  const before = names([lease("lease-a", "In-Use"), lease("lease-b", "In-Use"), lease("lease-c", "In-Use")]);
+  assert.deepEqual(before, ["lease-a", "lease-b", "lease-c"]);
+  // the history is shown, and the listing already has the lease as ended: without the mark it would go last
+  const listed = [lease("lease-a", "In-Use"), lease("lease-b", "Ended"), lease("lease-c", "In-Use")];
+  assert.deepEqual(names(listed), ["lease-a", "lease-c", "lease-b"]);
+  assert.deepEqual(names(listed, new Set(["lease-b"])), before);
 });

@@ -87,6 +87,71 @@ suite("exporters", () => {
     ]);
   });
 
+  test("a lease that is being acquired is one row, loading, until it is held", async function () {
+    this.timeout(30_000);
+    clearCliCalls();
+    // The controller makes the lease at once and binds its exporter three seconds later.
+    process.env.JMP_FAKE_LEASE_WAITS = "3000";
+    const restore = stubUi({ quickPicks: ["30m"], messages: [undefined] });
+    const leaseRows = async (): Promise<string[]> => {
+      const rows: string[] = [];
+      for (const node of (await api.trees.leases.getChildren()) ?? []) {
+        const item = await api.trees.leases.getTreeItem(node);
+        const label = typeof item.label === "string" ? item.label : (item.label?.label ?? "");
+        rows.push(`${label} | ${String(item.description ?? "")}`);
+      }
+      return rows;
+    };
+    const seen: string[][] = [];
+    let held: string[] = [];
+    try {
+      const nodes = (await api.trees.exporters.getChildren()) ?? [];
+      const node = await pickNode(api, nodes, "bench-1");
+      let done = false;
+      const acquiring = Promise.resolve(
+        vscode.commands.executeCommand("jumpstarter.exporters.acquireLease", node),
+      ).finally(() => {
+        done = true;
+      });
+      while (!done) {
+        seen.push(await leaseRows());
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+      await acquiring;
+      // Once it is held: its own row, named by its exporter, there as the request's row goes.
+      const after = await leaseRows();
+      held = after;
+      assert.ok(
+        after.some((row) => /^lease-new \| bench-1 · In-Use/.test(row)),
+        `the held lease has its own row: ${JSON.stringify(after)}`,
+      );
+    } finally {
+      restore();
+      delete process.env.JMP_FAKE_LEASE_WAITS;
+    }
+    // From the request until the lease is held: the request's row, and never the lease's own beside it or instead.
+    const during = seen.filter((rows) => rows.some((row) => /acquiring…/.test(row)));
+    assert.ok(during.length >= 10, `the request is shown while the lease waits (${during.length} of ${seen.length} readings)`);
+    // (the readings before the request was made, while its duration was being asked, have neither)
+    const first = seen.findIndex((rows) => rows.some((row) => /acquiring…/.test(row)));
+    for (const rows of seen.slice(first)) {
+      // (named for what was asked until the controller has made the lease, and by the lease's name from then on)
+      const request = rows.filter((row) => /^bench-1 \| acquiring…/.test(row)).length;
+      const lease = rows.filter((row) => /^lease-new \|/.test(row)).length;
+      assert.equal(request + lease, 1, `one row for the lease, at every reading: ${JSON.stringify(rows)}`);
+      assert.ok(!rows.some((row) => /^lease-new \| .*Waiting/.test(row)), `the lease's own row is not shown waiting: ${JSON.stringify(rows)}`);
+    }
+    // The row is where the lease is once it is held: it does not move when it is acquired.
+    const named = during.filter((rows) => rows.some((row) => /^lease-new \| bench-1 · acquiring…/.test(row)));
+    assert.ok(named.length >= 5, `the request is named by its lease while it waits (${named.length} readings)`);
+    const place = (rows: string[]): number => rows.findIndex((row) => /^lease-new \|/.test(row));
+    for (const rows of named) {
+      assert.equal(place(rows), place(held), `the row keeps its place: ${JSON.stringify(rows)} then ${JSON.stringify(held)}`);
+    }
+    clearCliCalls();
+    await api.refreshAll();
+  });
+
   test("leasing from a pool asks for any member, not a particular one", async () => {
     clearCliCalls();
     const restore = stubUi({ quickPicks: ["15m"], messages: [undefined] });
@@ -116,6 +181,9 @@ suite("exporters", () => {
   });
 
   test("a jmp without the hidden labels option still lists the exporters", async () => {
+    // The views read once more after the lease of the test before: that reading is over before this one asks,
+    // so that what is asked last here is this test's own call.
+    await api.refreshAll();
     process.env.JMP_FAKE_NO_HIDDEN_LABELS = "1";
     clearCliCalls();
     try {

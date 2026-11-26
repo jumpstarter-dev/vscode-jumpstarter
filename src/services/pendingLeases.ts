@@ -15,8 +15,8 @@
 import * as vscode from "vscode";
 import { PendingLease } from "./pendingLeasesModel";
 
-export { describePending } from "./pendingLeasesModel";
-export type { PendingLease } from "./pendingLeasesModel";
+export { describePending, describeReleasing, leasesStillPending, waitForLease, waitForRelease } from "./pendingLeasesModel";
+export type { LeaseWaitOutcome, PendingLease } from "./pendingLeasesModel";
 
 export class PendingLeaseStore implements vscode.Disposable {
   private readonly entries = new Map<string, PendingLease>();
@@ -32,6 +32,18 @@ export class PendingLeaseStore implements vscode.Disposable {
     this.entries.set(id, { id, client, label, startedAt: now });
     this.emitter.fire();
     return id;
+  }
+
+  /**
+   * The controller made the lease of a request: the request stays shown, in the
+   * place of that lease's own row, until the lease is held (see `end`).
+   */
+  named(id: string, leaseName: string): void {
+    const entry = this.entries.get(id);
+    if (entry && entry.leaseName !== leaseName) {
+      this.entries.set(id, { ...entry, leaseName });
+      this.emitter.fire();
+    }
   }
 
   /** Withdraw a request, whether it succeeded or failed. */

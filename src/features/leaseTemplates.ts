@@ -18,6 +18,7 @@ import * as vscode from "vscode";
 import { Services, JmpError } from "../services";
 import { LeaseTemplate } from "../types";
 import { showDetails } from "./details";
+import { acquireLease } from "./leases/acquire";
 import { isValidDuration } from "./leases/model";
 import * as model from "./leaseTemplates/model";
 import { LeaseTemplatesTreeProvider, TemplateDocNode, TemplateNode } from "./leaseTemplates/provider";
@@ -183,24 +184,19 @@ export function registerLeaseTemplates(
       return;
     }
     const label = model.requestLabel(template.name, without);
-    // Shown in the lease views for as long as it is outstanding: every role
-    // has to be bound before the lease exists for a listing.
-    const pending = services.pendingLeases.begin(client, label);
-    try {
-      const leaseName = await vscode.window.withProgress(
-        { location: { viewId: "jumpstarter.leases" }, title: `Acquiring lease from template ${label}…` },
-        () => jmp.createTemplateLease(client, { template: template.name, without, ...duration }),
-      );
-      void vscode.window.showInformationMessage(
-        `Jumpstarter: lease '${leaseName}' created from template ${label}.`,
-      );
-      services.notifyLeasesChanged();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      void vscode.window.showErrorMessage(`Jumpstarter: failed to lease template ${template.name}: ${message}`);
-    } finally {
-      services.pendingLeases.end(pending);
-    }
+    // Shown in the lease views until the lease is held: every role has to be
+    // bound first.
+    await acquireLease(
+      services,
+      {
+        client,
+        label,
+        target: `from template ${label}`,
+        create: () => jmp.createTemplateLease(client, { template: template.name, without, ...duration }),
+      },
+      (message) =>
+        void vscode.window.showErrorMessage(`Jumpstarter: failed to lease template ${template.name}: ${message}`),
+    );
   };
 
   /** The templates to choose from, read now when the view has none yet. Undefined when there are none to offer. */
