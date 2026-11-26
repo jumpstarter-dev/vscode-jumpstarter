@@ -171,10 +171,16 @@ function hostScript(page: HostedPage): string {
     standalone: true,
     // An empty page of this origin that VS Code knows as part of this webview (the blank page a webview's own
     // content is written into, named by the webview's id): a frame given it can load the plugin's files, where a
-    // frame with no address gets a 404 for each.
+    // frame with no address gets a 404 for each. It is beside the page that wrote this one, whose address this
+    // page has (a document written into takes the address of the one that wrote it): at the root of the origin
+    // in the desktop application, and under the editor's path in a browser (Eclipse Che, code-server), where the
+    // root is no page of the webview and a frame given it is outside the webview's service worker.
     emptyPage: (function () {
       var id = new URLSearchParams(location.search).get("id");
-      return id ? location.origin + "/fake.html?id=" + encodeURIComponent(id) : undefined;
+      if (!id) { return undefined; }
+      try {
+        return new URL("fake.html?id=" + encodeURIComponent(id) + (window.crossOriginIsolated ? "&vscode-coi=3" : ""), location.href).href;
+      } catch (e) { return undefined; }
     })(),
     post: function (message) {
       if (message.data instanceof Uint8Array) {

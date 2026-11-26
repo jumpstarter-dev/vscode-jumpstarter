@@ -2,6 +2,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { runInNewContext } from "node:vm";
 import { buildHostedPageHtml, buildProgressHtml, fileRoots, moveIndex, routeOf } from "../../features/nativeViews/page";
 import { bridgeCommand, withBundle } from "../../services/leaseBridge";
 
@@ -86,4 +87,51 @@ test("a tab that is opening shows a spinner in the window's colours, and no sent
   assert.ok(html.includes(`aria-label="Opening Screen: &#60;phone&#62;"`));
   assert.ok(html.includes("background: var(--vscode-editor-background)"));
   assert.equal(/<body>(.*)<\/body>/s.exec(html)?.[1].replace(/<[^>]*>/g, "").trim(), "");
+});
+
+/** Runs the document's host script as the webview's content frame at `address` would, and gives what it set. */
+function hostAt(address: string): { emptyPage?: string } {
+  const html = buildHostedPageHtml(PAGE);
+  const script = /<script nonce="n0nce">([\s\S]*?window\.__JUMPSTARTER_HOST__[\s\S]*?)<\/script>/.exec(html)?.[1];
+  assert.ok(script, "the host script is in the document");
+  const location = new URL(address);
+  const nothing = (): void => undefined;
+  const window: Record<string, unknown> = { addEventListener: nothing };
+  const context = {
+    window,
+    location,
+    URLSearchParams,
+    URL,
+    acquireVsCodeApi: () => ({ postMessage: nothing, getState: nothing, setState: nothing }),
+    document: { addEventListener: nothing, documentElement: { setAttribute: nothing }, body: undefined },
+    history: { replaceState: nothing },
+    MutationObserver: class {
+      observe = nothing;
+      disconnect = nothing;
+    },
+    setInterval: nothing,
+    setTimeout: nothing,
+    requestAnimationFrame: nothing,
+    console,
+  };
+  runInNewContext(script, { ...context, self: window, globalThis: window, ...window });
+  return window.__JUMPSTARTER_HOST__ as { emptyPage?: string };
+}
+
+test("the empty page a plugin's frame is given is the webview's blank page, beside the page that wrote this one", () => {
+  // the desktop application: the webview's pages are at the root of its origin
+  assert.equal(
+    hostAt("vscode-webview://1d79e6d5/index.html?id=1d79e6d5&parentId=1&platform=electron").emptyPage,
+    "vscode-webview://1d79e6d5/fake.html?id=1d79e6d5",
+  );
+  // an editor in a browser (Eclipse Che, code-server): they are under the editor's path, and the root is no page of the webview
+  const pre = "https://che.test/user/ws/3100/oss-dev/static/out/vs/workbench/contrib/webview/browser/pre";
+  assert.equal(
+    hostAt(`${pre}/index.html?id=70064042&parentId=1&swVersion=6&platform=browser#/d/display`).emptyPage,
+    `${pre}/fake.html?id=70064042`,
+  );
+  // (the page before anything was written into it, should a host leave its address)
+  assert.equal(hostAt(`${pre}/fake.html?id=70064042`).emptyPage, `${pre}/fake.html?id=70064042`);
+  // a page that does not say which webview it is has none: the frame is then filled without an address
+  assert.equal(hostAt(`${pre}/index.html?parentId=1`).emptyPage, undefined);
 });
